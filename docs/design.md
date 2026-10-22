@@ -10,8 +10,7 @@ a timeline, honest statistics, and an LLM-written description of the day.
 
 ## 1. Principles
 
-1. **Local-first.** All data lives on this Mac. The only things that leave are (a) work-only payloads to Lumen and
-   (b) a sanitized, aggregate export for my website that I review before publishing.
+1. **Local-first.** All data lives on this Mac. The only thing that leaves is work-only payloads to Lumen.
 2. **Known vs. inferred.** Every fact carries its evidence level. A calendar event means *scheduled*, not *attended*.
    An email timestamp means *sent at*, not *time spent writing*. LLM output is always *inferred* and links back to
    the events it came from.
@@ -58,18 +57,18 @@ Browser extension for ActivityWatch: **not installed in v1.** Window titles give
 │                                                          egress gate ────┼──► Lumen (work only)
 │                                                                    │     │  │
 │  Tauri app: menu-bar icon · floating pill · day/week view ◄────────┘     │  │
-│                                                                          │  │
-│  website export (aggregate JSON, manual review) ─────────────────────────┼──► longshuicy.github.io
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Collector daemon**: Python 3.12, run by `launchd`, independent of the UI so collection continues when the app
   is closed. Each adapter is a small module: `fetch(since) -> list[RawEvent]`.
-- **Store**: SQLite at `~/Library/Application Support/daytrace/daytrace.db`.
+- **Store**: everything lives under `~/.daytrace/` (`daytrace.db`, `rules.toml`, `.env`, `logs/`, `audit/`).
+  `DAYTRACE_HOME` overrides the location.
 - **Analysis**: Python (DuckDB/pandas over SQLite) for deterministic stats and episode building.
 - **LLM**: Lumen via OpenAI-compatible API, behind the egress gate (§8).
-- **Desktop UI**: Tauri + React + D3. The same chart components are reused on the website.
-- **Secrets**: macOS Keychain only. No tokens in files or env.
+- **Desktop UI**: Tauri + React + D3.
+- **Secrets**: `~/.daytrace/.env` (chmod 600, outside the repo), loaded at startup. `launchd` doesn't inherit the
+  shell environment, so a file is simpler than exported variables. Real environment variables override it.
 
 ## 5. Event model
 
@@ -166,8 +165,6 @@ Per day / week:
 - *Episode labels*: "Fixed the INCORE Helm chart deployment and documented it on the wiki."
 - *Day narrative*: one paragraph + 3–5 themes, given episodes + stats. Prompt requires distinguishing scheduled
   vs. observed and not inventing time spent.
-- *Week/month themes* (later): which topics rose and fell.
-- *Semantic search* (later): embeddings of episode labels, if Lumen exposes an embeddings endpoint.
 
 All outputs are stored with `evidence = 'inferred'`, the model name, and the episode/event ids used.
 
@@ -181,18 +178,15 @@ All outputs are stored with `evidence = 'inferred'`, the model name, and the epi
 - **Week view** — stacked categories, meeting load, focus blocks.
 - **Settings** — sources on/off, rules editor, retention, Lumen dry-run toggle, audit log viewer.
 
-## 10. Website export
+## 10. Later (separate tasks)
 
-- Command: `daytrace export --range 2026-11 --out site/data/`
-- Output: aggregate JSON only — per-day category minutes, meeting counts, focus blocks, project *keys*
-  (renameable/hideable), no titles, no people, no LLM narrative unless explicitly approved per day.
-- Review step: export writes a diff preview; nothing is copied to the website repo automatically.
-- Visuals (shared React/D3 components): day clock, week river (streamgraph), context-switch graph, year heatmap.
+- **Website export**: aggregate-only JSON (no titles, no people), manual review, interactive visuals on the
+  personal site (day clock, week river, context-switch graph, year heatmap).
 
 ## 11. Security & privacy checklist
 
 - [ ] Read-only scopes everywhere
-- [ ] Tokens in Keychain only
+- [ ] Tokens only in `~/.daytrace/.env` (chmod 600), never in the repo
 - [ ] No telemetry, no third-party analytics libs in the UI
 - [ ] Egress gate is the single network path to Lumen; covered by tests
 - [ ] Private browsing dropped at intake
@@ -208,7 +202,6 @@ All outputs are stored with `evidence = 'inferred'`, the model name, and the epi
 4. **Analysis** — stats + episodes; CLI report.
 5. **Lumen** — egress gate, dry-run, audit, episode labels, day narrative.
 6. **Desktop** — Tauri tray + floating pill + day view.
-7. **Website** — export + interactive visuals on the personal site.
 
 ## 13. Open questions
 
