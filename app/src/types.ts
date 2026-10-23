@@ -75,7 +75,6 @@ export interface Day {
   blocks: Block[];
   points: Point[];
   idle: { start: string; end: string }[];
-  story: Story | null;
   sites: Site[];
   highlights: Highlights;
 }
@@ -88,10 +87,38 @@ export interface Story {
   dry_run: boolean;
   audit: string | null;
   entries: number;  // projects and activities in the request
+  request: ReviewRequest | null;  // the built request waiting for review; null once sent
 }
 
+/** A week's or month's request to Lumen exactly as it would be sent; the review can only take things out. */
+export interface ReviewRequest {
+  period: string;
+  days: { date: string; active_min: number | null; meeting_min: number | null; first: string | null; last: string | null }[];
+  entries: ReviewEntry[];
+  also: { episodes?: number; minutes?: number };
+  private: { minutes: number };
+}
+
+export interface ReviewEntry {
+  key: string;
+  kind: "project" | "meeting" | "activity";
+  project: string | null;
+  group: GroupKey | null;
+  days: string[];
+  minutes: number;
+  activities: Record<string, number>;
+  counts: Record<string, number>;
+  titles: string[];
+  sites: Record<string, number>;
+  branches: string[];
+}
+
+/** What a review took out: a whole entry, or one title, site or branch of it. */
+export type Exclusion = { entry: string } | { entry: string; field: "titles" | "sites" | "branches"; value: string };
+
 export interface Site {
-  site: string | null;  // null: pages whose title names no site, and sites under two minutes
+  site: string | null;  // null: sites and pages under a minute, together
+  page: boolean;  // site is the page's title: it named no site
   minutes: number;
 }
 

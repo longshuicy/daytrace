@@ -10,7 +10,7 @@ a timeline, honest statistics, and an LLM-written description of the day.
 
 ## 1. Principles
 
-1. **Local-first.** All data lives on this Mac. The only thing that leaves is scrubbed day payloads to Lumen.
+1. **Local-first.** All data lives on this Mac. The only thing that leaves is a scrubbed week or month request to Lumen, after you review it.
 2. **Known vs. inferred.** Every fact carries its evidence level. Calendar meetings are taken as
    attended: checking attendance isn't worth the complexity. An email timestamp means *sent at*, not *time spent writing*. LLM output is always *inferred* and links back to
    the events it came from.
@@ -153,16 +153,18 @@ Per day / week:
    `{"start": "12:00", "end": "12:40", "minutes": 40}`.
 2. Project to an allowlisted field set: `start_at, end_at, category, project, title, source`. Nothing else.
 3. Run the secret scrubber again on the final payload.
-4. Write the exact payload to `audit/YYYY-MM-DD/*.json` before sending.
-5. **Dry-run mode** (default for the first weeks): build + audit, don't send.
+4. Write the exact payload to `audit/week-<sunday>/` or `audit/month-<YYYY-MM>/` and keep it for review; building
+   never sends.
+5. **Review**: the app shows the request entry by entry. The person can only take things out (whole entries, or
+   single titles, sites/pages, branches). Send sends that reviewed request once; writing again needs a new review.
 
 **LLM tasks**:
 
-- *Day narrative*: one paragraph + 2–4 themes, given per-project entries + stats. No per-entry labels. The prompt
-  forbids inventing time spent, and names meetings without saying what happened in them.
-- *Week / month narrative*: the same shape, from the days' already-gated payloads merged per project (days it
-  appeared, summed minutes and counts, up to three titles). Per-day totals replace time ranges; private time is
-  one total. Withheld once any event it used turns private.
+- *Week / month narrative*: one paragraph + 2–4 themes, from the days' gated payloads merged per project (days it
+  appeared, summed minutes and counts, up to three titles, site names or page titles). Per-day totals replace time
+  ranges; private time is one total. The prompt forbids inventing time spent, and names meetings without saying
+  what happened in them. Withheld once any event it used turns private.
+- No day narrative: it only restated what the day view already shows.
 
 All outputs are stored with `evidence = 'inferred'`, the model name, and the episode/event ids used.
 
@@ -171,10 +173,10 @@ All outputs are stored with `evidence = 'inferred'`, the model name, and the epi
 - **Menu-bar icon** — always present; shows sync status.
 - **Floating clock** — tiny always-on-top day clock in the bottom-right corner, toggleable; the summary line is
   its tooltip. Click to open the day view.
-- **Day view** — Lumen's narrative on top, stats, one activity card that switches between timeline, day clock and
+- **Day view** — stats, one activity card that switches between timeline, day clock and
   a sortable table, projects, top sites. Source status shows only as an alert when a sync fails.
 - **Week view** — stacked categories, meeting load, focus blocks.
-- **Settings** — sources on/off, rules editor, retention, Lumen dry-run toggle, audit log viewer.
+- **Settings** — sources on/off, rules editor, retention, audit log viewer.
 
 ## 10. Later (separate tasks)
 
@@ -198,7 +200,7 @@ All outputs are stored with `evidence = 'inferred'`, the model name, and the epi
 2. **First traces** — ActivityWatch + local git + Claude Code adapters (all local, no auth). CLI `daytrace today`.
 3. **Work systems** — GitHub, Outlook calendar (verify Graph consent early), Confluence, Drive.
 4. **Analysis** — stats + episodes; CLI report.
-5. **Lumen** — egress gate, dry-run, audit, episode labels, day narrative.
+5. **Lumen** — egress gate, review before sending, audit, week/month narrative.
 6. **Desktop** — Tauri tray + floating pill + day view.
 
 ## 13. Open questions

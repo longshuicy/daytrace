@@ -9,7 +9,6 @@ import DatePicker from "./DatePicker";
 import DayClock from "./DayClock";
 import { Change, ProjectsAndSites, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
 import PeriodView, { periodLabel, shiftPeriod } from "./PeriodView";
-import Story from "./Story";
 import Timeline from "./Timeline";
 import { Tooltip, useTooltip } from "./Tooltip";
 import "./dayview.css";
@@ -117,8 +116,6 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
   }
   return (
     <>
-      <Story day={day} />
-
       <section className="g5">
         <Tile label="Active" value={minutes(s.active_min)}
           note={s.first ? `${clock(s.first)}–${clock(s.last!)}${s.groups.other ? ` · incl. ${minutes(s.groups.other)} other` : ""}`

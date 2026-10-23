@@ -1,11 +1,12 @@
 """The only path from daytrace to an LLM. Builds the payload, scrubs it, and writes an audit copy.
 
-What can leave: one entry per project (time ranges, activity minutes, counts, up to three scrubbed titles, site
-names, branch names), totals for what was too short to list, and day-level counts. Private time leaves only as
-{"start", "end", "minutes"}. Nothing else: no page titles.
+A day payload holds one entry per project (time ranges, activity minutes, counts, up to three scrubbed titles,
+site names (or the page title when a page names no site), branch names), totals for what was too short to list,
+and day-level counts, with private time only as {"start", "end", "minutes"}. Day payloads are never sent alone.
 
 A week or month is built only from day payloads that already passed this gate, and leaves less: per-day
-totals instead of time ranges, and private time as one total.
+totals instead of time ranges, and private time as one total. It is sent only after a person has reviewed the
+exact request; the review can only take things out (see without).
 """
 
 import json
@@ -117,6 +118,26 @@ def build_period_payload(label: str, days: list[dict]) -> dict:
     }
     check(payload)
     return payload
+
+
+REVIEWABLE = ("titles", "sites", "branches")
+
+
+def without(payload: dict, exclude: list[dict]) -> dict:
+    """The payload minus what a review took out: whole entries ({"entry": key}) or single titles, sites or branches
+    ({"entry": key, "field": ..., "value": ...}). Unknown keys or values are ignored; nothing can be added."""
+    drop = {x["entry"] for x in exclude if "field" not in x}
+    parts = {(x["entry"], x["field"], x["value"]) for x in exclude if x.get("field") in REVIEWABLE}
+    entries = []
+    for en in payload["entries"]:
+        if en["key"] in drop:
+            continue
+        en = dict(en)
+        for f in REVIEWABLE:
+            keep = [v for v in en[f] if (en["key"], f, v) not in parts]
+            en[f] = {v: en[f][v] for v in keep} if isinstance(en[f], dict) else keep
+        entries.append(en)
+    return {**payload, "entries": entries}
 
 
 def check(payload: dict) -> None:

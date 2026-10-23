@@ -11,7 +11,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from .dayjson import group_of
+from .dayjson import group_of, page_name
 from .models import iso, parse_iso
 from .report import merge, total
 
@@ -85,11 +85,12 @@ def _episode(kind: str, name: str | None, items: list) -> dict:
             by_category[r["category"]].append((s, e))
         else:
             counts[r["category"]] += 1
-        if attrs.get("site"):
-            sites[attrs["site"]].append((s, e))
+        site = page_name(r, attrs)
+        if site:
+            sites[site].append((s, e))
         if r["title"] and r["category"] in SUBJECTS and r["title"] not in subjects:
             subjects.append(r["title"])
-        elif r["title"] and not attrs.get("site") and r["category"] != "browse":  # page titles stay local
+        elif r["title"] and not site and r["category"] != "browse":
             title = lumen_title(r, attrs)
             if title:
                 titles[title] += max((e - s).total_seconds(), 60)  # points weigh like a minute
@@ -176,7 +177,7 @@ def entries(eps: list[dict]) -> tuple[list[dict], dict]:
     """One entry per project (or meetings, or kind of activity without a project), in order of first appearance.
 
     Episodes under two minutes with no traces are only counted in the returned "also" totals. An entry keeps at
-    most three titles, commit and PR subjects first; for browsing only site names and minutes, never page titles.
+    most three titles, commit and PR subjects first; for browsing only site names (or the page title when it names no site) and minutes.
     """
     out, also = {}, {"episodes": 0, "minutes": 0}
     for ep in sorted(eps, key=lambda ep: ep["start_at"]):

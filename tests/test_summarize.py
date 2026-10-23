@@ -62,36 +62,6 @@ def test_episodes_split_on_gaps_and_skip_mail_and_future(day_store):
     assert all("Newsletter" not in e["titles"] for e in eps)
 
 
-def test_dry_run_sends_nothing_and_audits(day_store, rules, monkeypatch):
-    monkeypatch.setattr(lumen, "complete", lambda body: pytest.fail("dry run must not call Lumen"))
-    r = summarize.summarize(day_store, rules, DAY, at(13))
-    assert r.mode == "dry-run" and r.entries == 2
-    assert stat.S_IMODE(r.audit.stat().st_mode) == 0o600
-    payload = json.loads(json.loads(r.audit.read_text())["messages"][1]["content"])
-    text = json.dumps(payload)
-    assert "Very private song" not in text and "Spotify" not in text and "Newsletter" not in text
-    assert "bob@x.org" not in text and "Fix it for [email]" in text
-    assert payload["private"] == [{"start": "12:00", "end": "12:40", "minutes": 40}]
-    assert set(payload) == {"date", "stats", "entries", "also", "private"}
-    pdg = payload["entries"][0]
-    assert set(pdg) == set(egress.ENTRY_FIELDS) and pdg["key"] == "pdg"
-    assert pdg["times"] == ["09:00–09:55", "11:00–11:15"] and pdg["titles"][0] == "Fix it for [email]"
-    assert day_store.summary(DAY.isoformat())["stats"]["dry_run"] is True
-
-
-def test_send_stores_narrative(day_store, rules, monkeypatch):
-    def fake_complete(body):
-        return ("<think>planning</think>```json\n" + json.dumps({
-            "narrative": "You started the morning on PDG.", "themes": ["PDG", "calendar"]}) + "\n```")
-    monkeypatch.setattr(lumen, "complete", fake_complete)
-    r = summarize.summarize(day_store, rules, DAY, at(13), send=True)
-    assert r.mode == "sent" and r.narrative == "You started the morning on PDG."
-    start, end = day_bounds(DAY)
-    story = summarize.current(day_store, DAY, day_store.events_between(iso(start), iso(end)))
-    assert story["narrative"] == "You started the morning on PDG." and story["stats"]["themes"] == ["PDG", "calendar"]
-    assert sorted(p.name.split("-", 1)[1] for p in r.audit.parent.iterdir()) == ["request.json", "response.json"]
-
-
 def test_final_check_refuses_leaks():
     with pytest.raises(ValueError):
         egress.check({"episodes": [{"titles": ["mail carol@illinois.edu"]}]})
@@ -104,18 +74,6 @@ def test_parse_reply_variants():
     assert lumen.parse('{"narrative": "x", "themes": ["a"], "episodes": []}')["narrative"] == "x"
     with pytest.raises(ValueError):
         lumen.parse("Sorry, I can't help with that.")
-
-
-def test_story_is_withheld_once_its_events_turn_private(day_store, rules):
-    summarize.summarize(day_store, rules, DAY, at(13))
-    start, end = day_bounds(DAY)
-    rows = lambda: day_store.events_between(iso(start), iso(end))
-    assert summarize.current(day_store, DAY, rows()) is not None
-
-    with day_store.conn:  # as if the PDG folder were made private and re-synced
-        day_store.conn.execute("UPDATE events SET sensitivity = 'private', category = 'private', project = NULL, "
-                               "title = NULL WHERE project = 'pdg'")
-    assert summarize.current(day_store, DAY, rows()) is None
 
 
 def test_entries_group_by_project_and_keep_browsing_to_sites():
@@ -140,10 +98,16 @@ def test_entries_group_by_project_and_keep_browsing_to_sites():
 WEEK = (date(2026, 10, 18), date(2026, 10, 24))
 
 
-def test_week_dry_run_is_built_from_gated_days(day_store, rules, monkeypatch):
-    monkeypatch.setattr(lumen, "complete", lambda body: pytest.fail("dry run must not call Lumen"))
-    r = summarize.summarize_period(day_store, rules, "week", *WEEK, at(13))
+def request(store) -> str:
+    """Build this week's request (nothing is sent) and return its audit copy."""
+    return summarize.prepare_period(store, "week", *WEEK, at(13)).audit.read_text()
+
+
+def test_week_request_is_built_from_gated_days_and_kept_for_review(day_store, monkeypatch):
+    monkeypatch.setattr(lumen, "complete", lambda body: pytest.fail("building a request must not call Lumen"))
+    r = summarize.prepare_period(day_store, "week", *WEEK, at(13))
     assert r.mode == "dry-run" and r.audit.parent.name == "week-2026-10-18"
+    assert stat.S_IMODE(r.audit.stat().st_mode) == 0o600
     body = json.loads(r.audit.read_text())
     assert body["messages"][0]["content"] == lumen.PERIOD_PROMPT
     payload = json.loads(body["messages"][1]["content"])
@@ -159,32 +123,53 @@ def test_week_dry_run_is_built_from_gated_days(day_store, rules, monkeypatch):
     assert pdg["days"] == ["Thu 10-22"]
     assert pdg["minutes"] == 65 and pdg["counts"] == {"commit": 1}
     story = summarize.current_period(day_store, "week", *WEEK)
-    assert story["stats"]["dry_run"] is True
+    assert story["stats"]["dry_run"] is True and story["stats"]["request"] == payload
 
 
-def test_week_send_stores_narrative_and_is_withheld_once_private(day_store, rules, monkeypatch):
-    monkeypatch.setattr(lumen, "complete", lambda body: json.dumps({"narrative": "Your week was PDG.", "themes": ["PDG"]}))
-    r = summarize.summarize_period(day_store, rules, "week", *WEEK, at(13), send=True)
-    assert r.mode == "sent" and r.narrative == "Your week was PDG."
+def test_nothing_is_sent_without_a_prepared_request(day_store, monkeypatch):
+    monkeypatch.setattr(lumen, "complete", lambda body: pytest.fail("must not call Lumen"))
+    with pytest.raises(ValueError, match="review it first"):
+        summarize.send_period(day_store, "week", WEEK[0], at(13))
+
+
+def test_send_sends_the_reviewed_request_minus_exclusions(day_store, monkeypatch):
+    sent = []
+    monkeypatch.setattr(lumen, "complete", lambda body: sent.append(body) or json.dumps(
+        {"narrative": "Your week was PDG.", "themes": ["PDG"]}))
+    summarize.prepare_period(day_store, "week", *WEEK, at(13))
+    r = summarize.send_period(day_store, "week", WEEK[0], at(13), [
+        {"entry": "meetings"},
+        {"entry": "pdg", "field": "titles", "value": "Fix it for [email]"},
+        {"entry": "pdg", "field": "titles", "value": "not in the request"},  # ignored: a review can't add
+    ])
+    payload = json.loads(sent[0]["messages"][1]["content"])
+    assert [e["key"] for e in payload["entries"]] == ["pdg"] and payload["entries"][0]["titles"] == []
+    assert r.mode == "sent" and json.loads(r.audit.read_text()) == sent[0]  # the audit holds what was sent
     assert summarize.current_period(day_store, "week", *WEEK)["narrative"] == "Your week was PDG."
-    assert summarize.current(day_store, DAY, day_store.events_between(*map(iso, day_bounds(DAY)))) is None  # day untouched
+    with pytest.raises(ValueError):  # the request is used up; a new one needs a new review
+        summarize.send_period(day_store, "week", WEEK[0], at(13))
 
-    with day_store.conn:
+
+def test_week_story_is_withheld_once_its_events_turn_private(day_store, monkeypatch):
+    monkeypatch.setattr(lumen, "complete", lambda body: json.dumps({"narrative": "Your week was PDG.", "themes": []}))
+    summarize.prepare_period(day_store, "week", *WEEK, at(13))
+    summarize.send_period(day_store, "week", WEEK[0], at(13))
+    with day_store.conn:  # as if the PDG folder were made private and re-synced
         day_store.conn.execute("UPDATE events SET sensitivity = 'private', category = 'private', project = NULL, "
                                "title = NULL WHERE project = 'pdg'")
     assert summarize.current_period(day_store, "week", *WEEK) is None
 
 
-def test_week_with_nothing_recorded_is_refused(day_store, rules):
+def test_week_with_nothing_recorded_is_refused(day_store):
     with pytest.raises(ValueError):
-        summarize.summarize_period(day_store, rules, "week", date(2026, 10, 25), date(2026, 10, 31), at(13))
+        summarize.prepare_period(day_store, "week", date(2026, 10, 25), date(2026, 10, 31), at(13))
 
 
-def test_page_titles_without_a_site_stay_local(day_store, rules):
-    page = RawEvent("fake", "b1", "span", "observed", at(12, 45), at(12, 50), app="Google Chrome", title="Quarterly budget planning notes for the lab")
+def test_a_page_that_names_no_site_goes_by_its_title(day_store, rules):
+    page = RawEvent("fake", "b1", "span", "observed", at(12, 45), at(12, 50), app="Google Chrome",
+                    title="Quarterly budget planning notes for the lab")
     sync(day_store, rules, [Fake([page])], at(13))
-    r = summarize.summarize(day_store, rules, DAY, at(13))
-    assert "Quarterly budget" not in r.audit.read_text()
+    assert "Quarterly budget planning notes for the lab" in request(day_store)  # for review before anything is sent
 
 
 @pytest.mark.parametrize("title, expected", [
@@ -202,7 +187,7 @@ def test_slack_dm_names_stay_local(day_store, rules):
     dm = RawEvent("fake", "s1", "span", "observed", at(12, 45), at(12, 50), app="Slack",
                   title="Alex (DM) - NCSA @ Illinois - Slack")
     sync(day_store, rules, [Fake([dm])], at(13))
-    text = summarize.summarize(day_store, rules, DAY, at(13)).audit.read_text()
+    text = request(day_store)
     assert "Alex" not in text and "Direct message - NCSA @ Illinois" in text
 
 
@@ -230,5 +215,5 @@ def test_sent_mail_subjects_and_meeting_names_stay_local(day_store, rules):
     assert meeting.title == "1:1 with Alex Rivera" and meeting.attrs["lumen_title"] == "1:1 with [person]"
     assert "Alex" not in repr(meeting.attrs)
     sync(day_store, rules, [Fake([meeting, sent])], at(13))
-    text = summarize.summarize(day_store, rules, DAY, at(13)).audit.read_text()
+    text = request(day_store)
     assert "Alex" not in text and "Sam" not in text and "1:1 with [person]" in text

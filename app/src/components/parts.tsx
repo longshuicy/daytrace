@@ -121,11 +121,11 @@ export function SitesTable({ rows }: { rows: Site[] }) {
     <div className="table-scroll">
       <table className="bars sites">
         <colgroup><col style={{ width: 140 }} /><col /><col style={{ width: 52 }} /></colgroup>
-        <thead><tr><th>Site</th><th>Time</th><th><span className="sr-only">Duration</span></th></tr></thead>
+        <thead><tr><th>Site or page</th><th>Time</th><th><span className="sr-only">Duration</span></th></tr></thead>
         <tbody>
           {rows.map((s) => (
             <tr key={s.site ?? "_other"}>
-              <td className={`name${s.site ? "" : " muted"}`} title={s.site ?? undefined}>{s.site ?? "Other pages"}</td>
+              <td className={`name${s.site && !s.page ? "" : " muted"}`} title={s.site ?? undefined}>{s.site ?? "Other pages"}</td>
               <td className="bar-col">
                 <div className="bar" style={{ width: `${(s.minutes / max) * 100}%`, background: colorVar("browse") }} />
               </td>

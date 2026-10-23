@@ -35,6 +35,13 @@ def group_of(category: str, sensitivity: str) -> str:
     return _GROUP_OF.get(category, "other")
 
 
+def page_name(r, attrs: dict) -> str | None:
+    """A browser page's site, or its title when the title names no site."""
+    if attrs.get("site"):
+        return attrs["site"]
+    return r["title"] if r["category"] == "browse" and attrs.get("app") else None
+
+
 def _local(dt: datetime | None) -> str | None:
     return dt.astimezone().isoformat(timespec="seconds") if dt else None
 
@@ -44,7 +51,7 @@ def _minutes(td: timedelta) -> int:
 
 
 def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts: dict[str, int],
-          day_zero: datetime, now: datetime, story: dict | None = None) -> dict:
+          day_zero: datetime, now: datetime) -> dict:
     start, end = day_bounds(day)
     spans, points, idle = [], [], []
     received = 0
@@ -131,7 +138,6 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
         "idle": [{"start": _local(s), "end": _local(e)} for s, e in merge(idle)],
         "sites": sites(spans),
         "highlights": _highlights(points, spans, summary),
-        "story": story_view(story),
     }
 
 
@@ -175,18 +181,22 @@ def working_on(spans: list) -> list[dict]:
 
 
 def sites(spans: list) -> list[dict]:
-    """Browser time per site, named from tab titles. Sites under two minutes are folded into "Other pages"."""
-    by_site = defaultdict(list)
+    """Browser time per site, named from tab titles; a page whose title names no site is listed by its title
+    ("page": true). Sites and pages under a minute are folded into "Other pages"."""
+    by_site, pages = defaultdict(list), set()
     for r, s, e in spans:
         attrs = json.loads(r["attrs"] or "{}")
-        if r["sensitivity"] != "private" and attrs.get("app") and (attrs.get("site") or r["category"] == "browse"):
-            by_site[attrs.get("site")].append((s, e))
-    named = sorted(((site, total(v)) for site, v in by_site.items() if site), key=lambda kv: -kv[1])
+        name = page_name(r, attrs) if r["sensitivity"] != "private" else None
+        if name:
+            by_site[name].append((s, e))
+            if not attrs.get("site"):
+                pages.add(name)
+    named = sorted(((site, total(v)) for site, v in by_site.items()), key=lambda kv: -kv[1])
     shown = [(site, td) for site, td in named if td >= MIN_SITE][:MAX_SITES]
     rest = [iv for site, v in by_site.items() if site not in dict(shown) for iv in v]
-    out = [{"site": site, "minutes": _minutes(td)} for site, td in shown]
+    out = [{"site": site, "minutes": _minutes(td), "page": site in pages} for site, td in shown]
     if rest and total(rest) >= MIN_SITE:
-        out.append({"site": None, "minutes": _minutes(total(rest))})
+        out.append({"site": None, "minutes": _minutes(total(rest)), "page": False})
     return out
 
 
@@ -198,6 +208,7 @@ def story_view(row: dict | None) -> dict | None:
         "narrative": row["narrative"], "themes": stats.get("themes", []), "model": row["model"],
         "generated_at": _local(parse_iso(row["generated_at"])), "dry_run": bool(stats.get("dry_run")),
         "audit": stats.get("audit"), "entries": stats.get("entries", 0),
+        "request": stats.get("request") if stats.get("dry_run") else None,
     }
 
 

@@ -239,3 +239,22 @@ def test_period_week_matches_its_days(tmp_path, rules, projects):
     assert p["totals"]["active_min"] == day["summary"]["active_min"] == 40
     assert p["projects"] == [{"project": "pdg", "minutes": 40, "commits": 1, "prs": 0}]
     assert p["focus"]["date"] == "2026-10-22"
+
+
+def test_top_sites_list_pages_without_a_site_by_title(tmp_path, rules):
+    from daytrace import dayjson
+    s = store(tmp_path)
+    nine = datetime(2026, 10, 22, 14, 0, tzinfo=UTC)
+    sync(s, rules, [Fake("fake", [
+        raw("g", nine, 3, app="Google Chrome", title="Pull requests · acme/widgets · GitHub"),
+        raw("p", nine + timedelta(minutes=5), 4, app="Google Chrome",
+            title="Notes on choosing a widget library for the lab"),
+        raw("n", nine + timedelta(minutes=10), 0.5, app="Google Chrome", title="Some short visit to a page"),
+    ])], nine + timedelta(hours=1))
+    start, end = day_bounds(date(2026, 10, 22))
+    d = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO,
+                      nine + timedelta(hours=1))
+    assert d["sites"] == [
+        {"site": "Notes on choosing a widget library for the lab", "minutes": 4, "page": True},
+        {"site": "GitHub", "minutes": 3, "page": False},
+    ]

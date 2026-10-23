@@ -79,18 +79,19 @@ async fn summarize(
     app: AppHandle,
     date: Option<String>,
     send: bool,
-    period: Option<String>,
+    period: String,
+    exclude: Option<String>,
 ) -> Result<String, String> {
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut args = vec!["summarize"];
+        let mut args = vec!["summarize", period.as_str()];
         if let Some(d) = date.as_deref() {
             args.extend(["--date", d]);
         }
-        if let Some(p) = period.as_deref() {
-            args.extend(["--period", p]);
-        }
         if send {
             args.push("--send");
+            if let Some(x) = exclude.as_deref() {
+                args.extend(["--exclude", x]);
+            }
         }
         run_daytrace(&args)
     })

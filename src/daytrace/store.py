@@ -93,25 +93,6 @@ class Store:
             (end, start),
         ).fetchall()
 
-    def save_episodes(self, day: str, episodes: list[dict]) -> None:
-        """Replace a day's episodes, keeping labels of episodes that still exist."""
-        labels = dict(self.conn.execute("SELECT id, label FROM episodes WHERE day = ?", (day,)).fetchall())
-        from .episodes import details
-        with self.conn:
-            self.conn.execute("DELETE FROM episodes WHERE day = ?", (day,))
-            self.conn.executemany(
-                "INSERT INTO episodes (id, day, start_at, end_at, project, categories, sensitivity, label, "
-                "event_ids, details) VALUES (?, ?, ?, ?, ?, ?, 'normal', ?, ?, ?)",
-                [(ep["id"], day, ep["start_at"], ep["end_at"], ep["project"], json.dumps(ep["activities"]),
-                  ep.get("label") or labels.get(ep["id"]), json.dumps(ep["event_ids"]), details(ep))
-                 for ep in episodes],
-            )
-
-    def episode_event_ids(self, day: str) -> set[str]:
-        """Every event id that went into the day's stored episodes."""
-        rows = self.conn.execute("SELECT event_ids FROM episodes WHERE day = ?", (day,))
-        return {i for (ids,) in rows for i in json.loads(ids or "[]")}
-
     def save_summary(self, day: str, stats: dict, narrative: str | None, model: str, now: datetime) -> None:
         with self.conn:
             self.conn.execute(

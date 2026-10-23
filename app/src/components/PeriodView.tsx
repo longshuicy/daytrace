@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { summarizePeriod, usePeriod } from "../api";
-import { ago, clock, minutes, shiftDate, today } from "../format";
-import type { Period, PeriodDay, PeriodKind } from "../types";
+import { GROUP_LABEL, ago, clock, minutes, shiftDate, today } from "../format";
+import type { Exclusion, Period, PeriodDay, PeriodKind, ReviewEntry, ReviewRequest } from "../types";
 import { Change, ProjectsAndSites, ShippedCard, Tile, WorkingOnCard } from "./parts";
 
 const parse = (iso: string) => new Date(`${iso}T12:00:00`);
@@ -263,34 +263,37 @@ function Cell({ d, today: now, openDay }: { d: PeriodDay | null; today: string; 
   );
 }
 
-/** Lumen's look back at the week or month: summary and themes, with the same dry-run / send steps as a day. */
+/** Lumen's look back at the week or month. Nothing is sent until the exact request has been reviewed here. */
 function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"build" | "send" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const story = p.story;
   const hasData = p.days.some((d) => d.has_data);
 
-  const run = (send: boolean) => {
-    setBusy(true);
+  const run = (send: boolean, exclude: Exclusion[] = []) => {
+    setBusy(send ? "send" : "build");
     setError(null);
-    summarizePeriod(kind, p.start, send).catch((e) => setError(String(e))).finally(() => setBusy(false));
+    summarizePeriod(kind, p.start, send, exclude).catch((e) => setError(String(e))).finally(() => setBusy(null));
   };
+
+  if (story?.request) {
+    return (
+      <section className="card period-story" aria-label={`Review your ${kind}'s request`}>
+        <Review kind={kind} request={story.request} audit={story.audit} busy={busy}
+          onSend={(exclude) => run(true, exclude)} onRebuild={() => run(false)} />
+        {error && <div className="notice error">{error}</div>}
+      </section>
+    );
+  }
 
   return (
     <section className="card period-story" aria-label={`Your ${kind}`}>
       <div className="card-head">
         <h2>Your {kind}</h2>
         <div className="actions">
-          {story?.narrative ? (
-            <button className="quiet" disabled={busy} onClick={() => run(true)}>{busy ? "Writing…" : "Rewrite"}</button>
-          ) : story?.dry_run ? (
-            <>
-              <button className="primary" disabled={busy} onClick={() => run(true)}>{busy ? "Sending…" : "Send to Lumen"}</button>
-              <button className="quiet" disabled={busy} onClick={() => run(false)}>Rebuild request</button>
-            </>
-          ) : (
-            <button className="primary" disabled={busy || !hasData} onClick={() => run(false)}>{busy ? "Building…" : "Write summary"}</button>
-          )}
+          <button className={story?.narrative ? "quiet" : "primary"} disabled={!!busy || !hasData} onClick={() => run(false)}>
+            {busy ? "Building…" : story?.narrative ? "Write again" : "Write summary"}
+          </button>
         </div>
       </div>
       <div className="story-boxes">
@@ -300,22 +303,14 @@ function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
             <>
               <p className="narrative">{story.narrative}</p>
               <p className="caption">
-                Written by {story.model} {ago(story.generated_at)} from your days, without private time. Inferred: check it
+                Written by {story.model} {ago(story.generated_at)} from the request you reviewed. Inferred: check it
                 against the days below.
               </p>
-            </>
-          ) : story?.dry_run ? (
-            <>
-              <p className="muted">
-                <strong>Dry run.</strong> The request for {story.entries} projects and activities across the {kind} was built
-                and saved; nothing was sent. Read it before sending:
-              </p>
-              <code className="path">{story.audit}</code>
             </>
           ) : (
             <p className="muted">
               {hasData
-                ? `No summary yet. Built from each day's request (the same limits apply), with per-day totals instead of time ranges and private time as one total.`
+                ? `No summary yet. You'll see exactly what would be sent to Lumen and can take anything out before it leaves.`
                 : `Nothing recorded this ${kind} yet.`}
             </p>
           )}
@@ -329,5 +324,92 @@ function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
       </div>
       {error && <div className="notice error">{error}</div>}
     </section>
+  );
+}
+
+const FIELDS = [["titles", "Titles"], ["sites", "Sites and pages"], ["branches", "Branches"]] as const;
+
+function entryName(e: ReviewEntry): string {
+  if (e.kind === "meeting") return "Meetings";
+  return e.project ?? (e.group ? GROUP_LABEL[e.group] : e.key);
+}
+
+/** The request as it would leave, entry by entry. Untick an entry or click a title, site or branch to keep it out. */
+function Review({ kind, request, audit, busy, onSend, onRebuild }: {
+  kind: PeriodKind; request: ReviewRequest; audit: string | null; busy: "build" | "send" | null;
+  onSend: (exclude: Exclusion[]) => void; onRebuild: () => void;
+}) {
+  const [out, setOut] = useState<Set<string>>(new Set());
+  const id = (entry: string, field?: string, value?: string) => JSON.stringify([entry, field ?? null, value ?? null]);
+  const toggle = (k: string) => setOut((s) => {
+    const next = new Set(s);
+    if (!next.delete(k)) next.add(k);
+    return next;
+  });
+  const exclusions: Exclusion[] = [...out].map((k) => {
+    const [entry, field, value] = JSON.parse(k);
+    return field ? { entry, field, value } : { entry };
+  });
+  const kept = request.entries.filter((e) => !out.has(id(e.key))).length;
+  const privateMin = request.private.minutes;
+
+  return (
+    <>
+      <div className="card-head">
+        <h2>Review before sending</h2>
+        <div className="actions">
+          <button className="quiet" disabled={!!busy} onClick={onRebuild}>{busy === "build" ? "Building…" : "Rebuild"}</button>
+          <button className="primary" disabled={!!busy || kept === 0} onClick={() => onSend(exclusions)}>
+            {busy === "send" ? "Sending…" : `Send ${kept} of ${request.entries.length} to Lumen`}
+          </button>
+        </div>
+      </div>
+      <p className="review-note">
+        This is everything the request for {request.period} holds. Nothing has left your Mac. Untick an entry to leave it
+        out, or click a title, site or branch to remove just that.
+      </p>
+      <ul className="review-list">
+        {request.entries.map((e) => {
+          const off = out.has(id(e.key));
+          const counts = Object.entries(e.counts).map(([c, n]) => `${n} ${c}${n === 1 ? "" : "s"}`).join(" · ");
+          return (
+            <li key={e.key} className={off ? "off" : undefined}>
+              <label className="review-entry">
+                <input type="checkbox" checked={!off} onChange={() => toggle(id(e.key))} />
+                <span className="review-name">{entryName(e)}</span>
+                <span className="muted tabular">{minutes(e.minutes)} · {e.days.join(", ")}{counts && ` · ${counts}`}</span>
+              </label>
+              {!off && FIELDS.map(([field, label]) => {
+                const values = field === "sites" ? Object.keys(e.sites) : e[field];
+                if (!values.length) return null;
+                return (
+                  <div key={field} className="review-field">
+                    <span className="review-label">{label}</span>
+                    <div className="review-values">
+                      {values.map((v) => {
+                        const k = id(e.key, field, v);
+                        return (
+                          <button key={v} className={`review-chip${out.has(k) ? " off" : ""}`} onClick={() => toggle(k)}
+                            aria-pressed={!out.has(k)} title={out.has(k) ? "Left out. Click to include" : "Click to leave out"}>
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="review-note muted">
+        Also sent: totals for the {kind} and for each of {request.days.length} day{request.days.length === 1 ? "" : "s"} with
+        data (active and meeting minutes, first and last activity)
+        {privateMin ? `, private time as one total (${minutes(privateMin)})` : ""}
+        {request.also.episodes ? `, and a count of ${request.also.episodes} short bits too small to list` : ""}.
+        {audit && <> The full request is saved at <code className="path inline">{audit}</code>.</>}
+      </p>
+    </>
   );
 }

@@ -50,30 +50,29 @@ brew install --cask activitywatch
 Other commands: `daytrace status`, `daytrace today --date 2026-10-22`, `daytrace forget START END`,
 `daytrace agent uninstall`.
 
-## Day summaries (Lumen)
+## Week and month summaries (Lumen)
 
-`daytrace summarize [--date D] [--send]` groups the day's work into episodes and asks Lumen (an
-OpenAI-compatible endpoint: `LUMEN_BASE_URL` ending in `/v1`, `LUMEN_MODEL`, `LUMEN_API_KEY` in `.env`) for
-episode labels, a short paragraph and themes. It's a dry run unless you pass `--send` or set
-`mode = "send"` under `[lumen]` in `rules.toml`.
+`daytrace summarize week|month [--date D]` builds the request for the week (Sunday to Saturday) or month around a
+date, for Lumen (an OpenAI-compatible endpoint: `LUMEN_BASE_URL` ending in `/v1`, `LUMEN_MODEL`, `LUMEN_API_KEY`
+in `.env`) to write a short paragraph and themes. Building sends nothing: the exact request is saved under
+`~/.daytrace/audit/week-<sunday>/` or `month-<YYYY-MM>/` and shown in the app for review, where you can leave out
+whole entries or single titles, sites, pages or branches. Only then does **Send** (or
+`daytrace summarize week|month --send`) send the reviewed request, and only once: writing again needs a new
+review. Days are not summarized on their own.
 
-What leaves the machine: episodes (local times, project, minutes per activity, counts, up to six
-scrubbed titles, branch names) and day counts. Private time leaves only as bare time ranges. Every request
-(and reply) is saved under `~/.daytrace/audit/<date>/` before anything is sent.
-
-`daytrace summarize --period week|month [--date D] [--send]` does the same for the week (Sunday to Saturday)
-or month around a date. It is built only from each day's gated request, and sends less: per-day totals
-instead of time ranges, private time as one total. Audits go to `~/.daytrace/audit/week-<sunday>/` or
-`month-<YYYY-MM>/`. Browser page titles never leave, even when no site name can be read from them, and Slack windows leave as
-the channel or view name only (a DM is just "Direct message"). Outlook and Teams windows leave as a folder or
-view name ("Inbox", "Chat") or just the app name; sent-mail subjects don't leave at all (only the count); and
-meeting titles leave with the invite's attendee and organizer names replaced by "[person]".
+What the request holds: one entry per project (or meetings, or a kind of activity without a project) with the
+days it appeared, minutes per activity, counts, up to three scrubbed titles, site names (or the page title when a
+page names no site) and branch names; per-day totals; private time as one total. Slack windows go as the channel
+or view name only (a DM is just "Direct message"). Outlook and Teams windows go as a folder or view name
+("Inbox", "Chat") or just the app name; sent-mail subjects don't go at all (only the count); and meeting titles go
+with the invite's attendee and organizer names replaced by "[person]". Every request and reply is saved in the
+audit folder.
 
 ## Desktop app
 
 `app/` is a Tauri app: a menu-bar icon, a small always-on-top day clock in the bottom-right corner, and a day
-view with Day / Week / Month (Lumen's summary, a timeline you can switch to a day clock or a sortable table, projects, top sites, and an
-alert when a source fails to sync). It reads data through
+view with Day / Week / Month (a timeline you can switch to a day clock or a sortable table, projects, top sites, an
+alert when a source fails to sync, and on Week and Month the Lumen summary with its review step). It reads data through
 `daytrace day --json`, so it needs the CLI installed (`~/.local/bin/daytrace`, or set `DAYTRACE_BIN`).
 
 ```bash
@@ -99,7 +98,7 @@ gitignored.
 - Private events keep only their timing: no app, title, URL or project. They leave the machine only as bare
   time ranges.
 - Nothing is sent anywhere except read-only requests to the services themselves (GitHub, the wiki), and Lumen
-  when you turn sending on.
+  when you send a week or month request you reviewed.
 - Private/incognito windows are never stored.
 - Raw ActivityWatch events are deleted from ActivityWatch 7 days after daytrace ingests them.
 

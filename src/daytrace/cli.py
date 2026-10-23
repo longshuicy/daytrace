@@ -79,8 +79,7 @@ def cmd_day(args) -> None:
     start, end = day_bounds(day)
     statuses = {name: json.loads(value) for name, value in _statuses(store, rules).items()}
     rows, now = store.events_between(iso(start), iso(end)), datetime.now(UTC)
-    data = dayjson.build(day, rows, statuses, store.counts_by_source(), day_zero(store), now,
-                         story=summarize.current(store, day, rows))
+    data = dayjson.build(day, rows, statuses, store.counts_by_source(), day_zero(store), now)
     print(dayjson.dumps(data))
 
 
@@ -92,19 +91,20 @@ def cmd_period(args) -> None:
 
 
 def cmd_summarize(args) -> None:
-    store, rules = _open()
+    store, _ = _open()
     day_zero(store)
-    day = date.fromisoformat(args.date) if args.date else date.today()
-    if args.period:
-        first, last = (period.week_of if args.period == "week" else period.month_of)(day)
-        r = summarize.summarize_period(store, rules, args.period, first, last, datetime.now(UTC), send=args.send)
+    anchor = date.fromisoformat(args.date) if args.date else date.today()
+    first, last = (period.week_of if args.kind == "week" else period.month_of)(anchor)
+    if args.send:
+        exclude = json.loads(args.exclude) if args.exclude else []
+        r = summarize.send_period(store, args.kind, first, datetime.now(UTC), exclude)
     else:
-        r = summarize.summarize(store, rules, day, datetime.now(UTC), send=args.send)
+        r = summarize.prepare_period(store, args.kind, first, last, datetime.now(UTC))
     if r.mode == "dry-run":
-        print(f"Dry run: {r.entries} entries. Nothing was sent.")
-        print(f"The exact request is in {r.audit}")
-        again = f" --period {args.period}" if args.period else ""
-        print(f"Review it, then run `daytrace summarize{again} --send`, or set mode = \"send\" under [lumen] in rules.toml.")
+        print(f"Request built: {r.entries} entries. Nothing was sent.")
+        print(f"Review the exact request in {r.audit} (or in the app),")
+        date_arg = f" --date {args.date}" if args.date else ""
+        print(f"then send it with `daytrace summarize {args.kind}{date_arg} --send`.")
     else:
         print(r.narrative)
         if r.themes:
@@ -181,10 +181,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--date", help="any day in it, YYYY-MM-DD, default today")
     p.set_defaults(func=cmd_period)
 
-    p = sub.add_parser("summarize", help="describe a day, week or month with Lumen (dry run unless --send or mode = send)")
-    p.add_argument("--date", help="YYYY-MM-DD, default today")
-    p.add_argument("--send", action="store_true", help="send to Lumen this time, even in dry-run mode")
-    p.add_argument("--period", choices=["week", "month"], help="summarize the week or month around --date instead")
+    p = sub.add_parser("summarize", help="describe a week or month with Lumen: build, review, then --send")
+    p.add_argument("kind", choices=["week", "month"])
+    p.add_argument("--date", help="any day in it, YYYY-MM-DD, default today")
+    p.add_argument("--send", action="store_true", help="send the request built earlier, after you reviewed it")
+    p.add_argument("--exclude", help="with --send: JSON list of what the review took out")
     p.set_defaults(func=cmd_summarize)
 
     sub.add_parser("status", help="sources, counts, last sync").set_defaults(func=cmd_status)
