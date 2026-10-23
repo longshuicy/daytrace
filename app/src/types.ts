@@ -76,4 +76,27 @@ export interface Day {
   blocks: Block[];
   points: Point[];
   idle: { start: string; end: string }[];
+  story: Story | null;
+  episodes: Episode[];
+}
+
+export interface Story {
+  narrative: string | null;
+  themes: string[];
+  model: string;
+  generated_at: string;
+  dry_run: boolean;
+  audit: string | null;
+}
+
+export interface Episode {
+  id: string;
+  start: string;
+  end: string;
+  kind: "meeting" | "project" | "activity";
+  project: string | null;
+  group: GroupKey;
+  minutes: number;
+  label: string | null;
+  counts: Record<string, number>;
 }

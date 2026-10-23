@@ -50,6 +50,17 @@ brew install --cask activitywatch
 Other commands: `daytrace status`, `daytrace today --date 2026-10-22`, `daytrace forget START END`,
 `daytrace agent uninstall`.
 
+## Day summaries (Lumen)
+
+`daytrace summarize [--date D] [--send]` groups the day's work into episodes and asks Lumen (an
+OpenAI-compatible endpoint: `LUMEN_BASE_URL` ending in `/v1`, `LUMEN_MODEL`, `LUMEN_API_KEY` in `.env`) for
+episode labels, a short paragraph and themes. It's a dry run unless you pass `--send` or set
+`mode = "send"` under `[lumen]` in `rules.toml`.
+
+What leaves the machine: work episodes (local times, project, minutes per activity, counts, up to six
+scrubbed titles, branch names) and day counts. Non-work time leaves only as bare time ranges. Every request
+(and reply) is saved under `~/.daytrace/audit/<date>/` before anything is sent.
+
 ## Desktop app
 
 `app/` is a Tauri app: a menu-bar icon, a small always-on-top pill with today's strip and one summary line,

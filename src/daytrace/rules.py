@@ -65,6 +65,11 @@ max_depth = 3
 # Empty means: use `git config --global user.email`.
 author_emails = []
 
+[lumen]
+# "dry-run": build the request and save it under ~/.daytrace/audit/, send nothing.
+# "send": send work-only summaries to Lumen. `daytrace summarize --send` sends once regardless.
+mode = "dry-run"
+
 [retention]
 # Raw ActivityWatch events older than this are deleted from ActivityWatch once ingested.
 # Set to 0 to keep raw data forever.
@@ -108,6 +113,7 @@ class Rules:
     git_authors: list[str]
     activitywatch_raw_days: int
     personal_owners: set[str] = field(default_factory=set)
+    lumen_mode: str = "dry-run"
     _remotes: dict[Path, str | None] = field(default_factory=dict, repr=False)
     _repos: dict[str, Path] | None = field(default=None, repr=False)
 
@@ -132,6 +138,7 @@ class Rules:
             git_authors=[e.lower() for e in git.get("author_emails", [])],
             activitywatch_raw_days=retention.get("activitywatch_raw_days", 7),
             personal_owners={o.lower() for o in github.get("personal_owners", [])},
+            lumen_mode=d.get("lumen", {}).get("mode", "dry-run"),
         )
 
     @classmethod

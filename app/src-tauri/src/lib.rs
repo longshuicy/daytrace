@@ -61,6 +61,24 @@ async fn sync_now(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn summarize(app: AppHandle, date: Option<String>, send: bool) -> Result<String, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut args = vec!["summarize"];
+        if let Some(d) = date.as_deref() {
+            args.extend(["--date", d]);
+        }
+        if send {
+            args.push("--send");
+        }
+        run_daytrace(&args)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit("synced", result.is_ok());
+    result
+}
+
+#[tauri::command]
 fn show_day(app: AppHandle, date: Option<String>) {
     show_main(&app, date);
 }
@@ -100,7 +118,7 @@ fn place_pill(app: &AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![day, sync_now, show_day])
+        .invoke_handler(tauri::generate_handler![day, sync_now, summarize, show_day])
         .setup(|app| {
             // Menu-bar app: no Dock icon.
             #[cfg(target_os = "macos")]

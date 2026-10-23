@@ -54,6 +54,13 @@ class Store:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(episodes)")}
+        if "details" not in columns:
+            with self.conn:
+                self.conn.execute("ALTER TABLE episodes ADD COLUMN details TEXT")
 
     def close(self) -> None:
         self.conn.close()
@@ -76,6 +83,49 @@ class Store:
             "ORDER BY start_at",
             (end, start),
         ).fetchall()
+
+    def save_episodes(self, day: str, episodes: list[dict]) -> None:
+        """Replace a day's episodes, keeping labels of episodes that still exist."""
+        labels = dict(self.conn.execute("SELECT id, label FROM episodes WHERE day = ?", (day,)).fetchall())
+        from .episodes import details
+        with self.conn:
+            self.conn.execute("DELETE FROM episodes WHERE day = ?", (day,))
+            self.conn.executemany(
+                "INSERT INTO episodes (id, day, start_at, end_at, project, categories, sensitivity, label, "
+                "event_ids, details) VALUES (?, ?, ?, ?, ?, ?, 'work', ?, ?, ?)",
+                [(ep["id"], day, ep["start_at"], ep["end_at"], ep["project"], json.dumps(ep["activities"]),
+                  ep.get("label") or labels.get(ep["id"]), json.dumps(ep["event_ids"]), details(ep))
+                 for ep in episodes],
+            )
+
+    def episodes(self, day: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, start_at, end_at, project, label, details FROM episodes WHERE day = ? ORDER BY start_at",
+            (day,),
+        ).fetchall()
+        return [{"id": r["id"], "start_at": r["start_at"], "end_at": r["end_at"], "project": r["project"],
+                 "label": r["label"], **json.loads(r["details"] or "{}")} for r in rows]
+
+    def set_labels(self, labels: dict[str, str]) -> None:
+        with self.conn:
+            self.conn.executemany("UPDATE episodes SET label = ? WHERE id = ?",
+                                  [(label, i) for i, label in labels.items()])
+
+    def save_summary(self, day: str, stats: dict, narrative: str | None, model: str, now: datetime) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO day_summaries (day, stats, narrative, model, generated_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(day) DO UPDATE SET stats = excluded.stats, narrative = excluded.narrative, "
+                "model = excluded.model, generated_at = excluded.generated_at",
+                (day, json.dumps(stats), narrative, model, iso(now)),
+            )
+
+    def summary(self, day: str) -> dict | None:
+        row = self.conn.execute("SELECT * FROM day_summaries WHERE day = ?", (day,)).fetchone()
+        if not row:
+            return None
+        return {"stats": json.loads(row["stats"] or "{}"), "narrative": row["narrative"],
+                "model": row["model"], "generated_at": row["generated_at"]}
 
     def has_source_ids(self, source: str, source_ids: list[str]) -> set[str]:
         found = set()

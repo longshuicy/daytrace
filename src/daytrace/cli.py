@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, dayjson, launchd, msgraph
+from . import config, dayjson, launchd, msgraph, summarize
 from .adapters import NotConfigured, all_adapters
 from .models import UTC, iso, parse_iso
 from .report import day_bounds, render
@@ -79,8 +79,25 @@ def cmd_day(args) -> None:
         for r in store.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'status:%'")
     }
     data = dayjson.build(day, store.events_between(iso(start), iso(end)), statuses,
-                         store.counts_by_source(), day_zero(store), datetime.now(UTC))
+                         store.counts_by_source(), day_zero(store), datetime.now(UTC),
+                         story=store.summary(day.isoformat()), episodes=store.episodes(day.isoformat()))
     print(dayjson.dumps(data))
+
+
+def cmd_summarize(args) -> None:
+    store, rules = _open()
+    day_zero(store)
+    day = date.fromisoformat(args.date) if args.date else date.today()
+    r = summarize.summarize(store, rules, day, datetime.now(UTC), send=args.send)
+    if r.mode == "dry-run":
+        print(f"Dry run: {r.episodes} episodes. Nothing was sent.")
+        print(f"The exact request is in {r.audit}")
+        print("Review it, then run `daytrace summarize --send`, or set mode = \"send\" under [lumen] in rules.toml.")
+    else:
+        print(r.narrative)
+        if r.themes:
+            print("\nThemes: " + " · ".join(r.themes))
+        print(f"\n(request and reply saved in {r.audit.parent})")
 
 
 def cmd_status(args) -> None:
@@ -147,6 +164,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--json", action="store_true", help="accepted for clarity; output is always JSON")
     p.set_defaults(func=cmd_day)
 
+    p = sub.add_parser("summarize", help="describe a day with Lumen (dry run unless --send or mode = send)")
+    p.add_argument("--date", help="YYYY-MM-DD, default today")
+    p.add_argument("--send", action="store_true", help="send to Lumen this time, even in dry-run mode")
+    p.set_defaults(func=cmd_summarize)
+
     sub.add_parser("status", help="sources, counts, last sync").set_defaults(func=cmd_status)
 
     p = sub.add_parser("forget", help="delete everything stored for a date range")
@@ -170,7 +192,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         args.func(args)
-    except (NotInitialized, NotConfigured, RuntimeError) as exc:
+    except (NotInitialized, NotConfigured, RuntimeError, ValueError) as exc:
         sys.exit(f"daytrace: {exc}")
 
 

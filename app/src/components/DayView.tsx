@@ -7,6 +7,7 @@ import {
 } from "../format";
 import type { Day } from "../types";
 import DayClock from "./DayClock";
+import Story from "./Story";
 import Timeline from "./Timeline";
 import { Tooltip, useTooltip } from "./Tooltip";
 import "./dayview.css";
@@ -66,6 +67,8 @@ function Body({ day, fullDay, setFullDay, asTable, setAsTable, tooltip }: BodyPr
   return (
     <>
       <p className="line">{day.line}</p>
+
+      <Story day={day} />
 
       <section className="tiles">
         <Tile label="Work" value={minutes(s.work_min)} hero

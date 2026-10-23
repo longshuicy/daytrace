@@ -39,7 +39,7 @@ def _minutes(td: timedelta) -> int:
 
 
 def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts: dict[str, int],
-          day_zero: datetime, now: datetime) -> dict:
+          day_zero: datetime, now: datetime, story: dict | None = None, episodes: list[dict] = ()) -> dict:
     start, end = day_bounds(day)
     spans, points, idle = [], [], []
     received = 0
@@ -125,6 +125,23 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "source": p["source"], "title": p["title"], "url": p["url"],
         } for p in points],
         "idle": [{"start": _local(s), "end": _local(e)} for s, e in merge(idle)],
+        "story": _story(story),
+        "episodes": [{
+            "id": ep["id"], "start": _local(parse_iso(ep["start_at"])), "end": _local(parse_iso(ep["end_at"])),
+            "kind": ep.get("kind"), "project": ep.get("project"), "group": ep.get("group") or "code",
+            "minutes": ep.get("minutes", 0), "label": ep.get("label"), "counts": ep.get("counts", {}),
+        } for ep in episodes],
+    }
+
+
+def _story(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    stats = row["stats"]
+    return {
+        "narrative": row["narrative"], "themes": stats.get("themes", []), "model": row["model"],
+        "generated_at": _local(parse_iso(row["generated_at"])), "dry_run": bool(stats.get("dry_run")),
+        "audit": stats.get("audit"),
     }
 
 

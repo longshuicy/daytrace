@@ -18,6 +18,10 @@ _SECRETS = [
     re.compile(r"\b[A-Za-z0-9+/]{48,}={0,2}"),
 ]
 _URL = re.compile(r"https?://\S+")
+# Browser titles: "host/path?query - Google Chrome - Profile name". Drop the query and the browser/profile tail.
+_BARE_URL_QUERY = re.compile(r"\b((?:[\w-]+\.)+[a-z]{2,}(?:/[^\s?#]*)?)[?#]\S*", re.I)
+_BROWSER_SUFFIX = re.compile(
+    r"\s+[-–—]\s+(Google Chrome|Chromium|Safari|Firefox|Arc|Microsoft Edge|Brave)\b.*$", re.I)
 
 
 def strip_url(url: str | None) -> str | None:
@@ -27,10 +31,16 @@ def strip_url(url: str | None) -> str | None:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
+def tidy_title(text: str | None) -> str | None:
+    if not text:
+        return text
+    return _BARE_URL_QUERY.sub(r"\1", _BROWSER_SUFFIX.sub("", text)).strip()
+
+
 def scrub(text: str | None) -> str | None:
     if not text:
         return text
-    text = _URL.sub(lambda m: strip_url(m.group(0)), text)
+    text = tidy_title(_URL.sub(lambda m: strip_url(m.group(0)), text))
     for pattern in _SECRETS:
         text = pattern.sub(REDACTED, text)
     return text

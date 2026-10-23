@@ -5,6 +5,7 @@ import type { Day } from "./types";
 
 export const loadDay = (date?: string) => invoke<Day>("day", { date: date ?? null });
 export const syncNow = () => invoke<string>("sync_now");
+export const summarizeDay = (date: string, send: boolean) => invoke<string>("summarize", { date, send });
 export const showDay = (date?: string) => invoke("show_day", { date: date ?? null });
 
 const REFRESH_MS = 60_000;
