@@ -24,6 +24,7 @@ STRETCH_GAP = timedelta(minutes=5)
 INTERRUPTION = timedelta(minutes=2)  # meetings, mail, chat or private time at least this long break focus
 AWAY = timedelta(minutes=5)          # so does being away from the keyboard longer than this
 MIN_SITE = timedelta(minutes=1)
+MIN_BLOCK = timedelta(seconds=30)  # shorter blocks would read "0m"; they still count toward the totals
 MAX_SITES = 8
 SHIPPED = ("pr", "release", "wiki", "issue")  # traces that put something out into the world
 TRUNKS = ("main", "master", "develop", "HEAD")  # listed last in "Working on": they don't name a thread of work
@@ -244,6 +245,8 @@ def _blocks(spans: list) -> list[dict]:
                 current["_titles"][title] += (e - s).total_seconds()
     out = []
     for b, source, category, project, sensitivity, evidence in blocks:
+        if b["_end"] - b["_start"] < MIN_BLOCK:
+            continue
         out.append({
             "start": _local(b["_start"]), "end": _local(b["_end"]),
             "minutes": round((b["_end"] - b["_start"]).total_seconds() / 60, 1),

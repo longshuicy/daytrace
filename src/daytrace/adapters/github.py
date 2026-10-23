@@ -3,16 +3,17 @@
 import json
 import os
 import subprocess
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 from typing import Iterable
 
-from ..models import RawEvent, parse_iso
+from ..models import UTC, RawEvent, parse_iso
 
 API = "https://api.github.com"
 MAX_PAGES = 3  # the events feed holds at most 300 events
 # PR and issue actions worth a trace; assignments, labels and edits are noise.
-KEPT_ACTIONS = {"opened", "closed", "reopened", "ready_for_review"}
+KEPT_ACTIONS = {"opened", "closed", "merged", "reopened", "ready_for_review"}
 
 
 class GitHub:
@@ -42,6 +43,7 @@ class GitHub:
 
     def fetch(self, since: datetime, until: datetime) -> Iterable[RawEvent]:
         login = self._get("/user")["login"]
+        yield from self._opened(login, since, until)  # first, so an event keeps the creation time, not the feed's
         for page in range(1, MAX_PAGES + 1):
             events = self._get(f"/users/{login}/events?per_page=100&page={page}")
             for e in events:
@@ -52,6 +54,19 @@ class GitHub:
                         yield self._with_title(raw)
             if not events or parse_iso(events[-1]["created_at"]) < since:
                 break
+
+    def _opened(self, login: str, since: datetime, until: datetime) -> Iterable[RawEvent]:
+        """Issues and PRs you opened, from search: the feed drops some "opened" events and adds others late.
+        Both use the same source id, so one opened twice is stored once."""
+        q = urllib.parse.quote(f"author:{login} created:>={since.astimezone(UTC):%Y-%m-%dT%H:%M:%SZ}")
+        try:
+            items = self._get(f"/search/issues?q={q}&per_page=100").get("items", [])
+        except OSError:  # search has its own, stricter rate limit; the feed still counts
+            return
+        for item in items:
+            raw = search_raw(item)
+            if since <= raw.start_at < until:
+                yield raw
 
 
     def _with_title(self, raw: RawEvent) -> RawEvent:
@@ -130,12 +145,31 @@ def to_raw(e: dict) -> RawEvent | None:
         return None
 
     item = payload.get("pull_request") or payload.get("issue") or {}
+    number = item.get("number") or payload.get("number")
+    opened = kind in ("PullRequestEvent", "IssuesEvent") and payload.get("action") == "opened" and number
     return RawEvent(
-        "github", str(e["id"]), "point", "recorded", parse_iso(e["created_at"]),
-        category=category, title=title, url=url or web, owner=owner, repo=repo,
-        attrs={"repo": full_name, "type": kind, "number": item.get("number") or payload.get("number"),
-               "has_title": bool(item.get("title"))},
+        "github", _opened_id(full_name, number) if opened else str(e["id"]), "point", "recorded",
+        parse_iso(e["created_at"]), category=category, title=title, url=url or web, owner=owner, repo=repo,
+        attrs={"repo": full_name, "type": kind, "number": number, "has_title": bool(item.get("title"))},
     )
+
+
+def search_raw(item: dict) -> RawEvent:
+    """An issue or PR from search, as the "opened" trace the feed would have given."""
+    full_name = item["repository_url"].split("/repos/", 1)[1]
+    owner, _, repo = full_name.partition("/")
+    is_pr = "pull_request" in item
+    return RawEvent(
+        "github", _opened_id(full_name, item["number"]), "point", "recorded", parse_iso(item["created_at"]),
+        category="pr" if is_pr else "issue", title=_numbered(f"Opened {'PR' if is_pr else 'issue'}", item, {}),
+        url=item.get("html_url"), owner=owner, repo=repo,
+        attrs={"repo": full_name, "type": "PullRequestEvent" if is_pr else "IssuesEvent",
+               "number": item["number"], "has_title": bool(item.get("title"))},
+    )
+
+
+def _opened_id(full_name: str, number: int) -> str:
+    return f"opened:{full_name}#{number}"
 
 
 def _link(item: dict, payload: dict, web: str, kind: str) -> str | None:

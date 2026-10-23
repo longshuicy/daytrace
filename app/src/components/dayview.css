@@ -132,10 +132,10 @@ h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; vertical-align: -1px; }
 .swatch.round { border-radius: 50%; }
 
-.split { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
-.projects-card { flex: 3 1 440px; padding-bottom: 8px; }
+.split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+@media (max-width: 720px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.projects-card, .sites-card { padding-bottom: 8px; }
 .projects-card h2, .sites-card h2 { margin-bottom: 6px; line-height: 22px; }
-.sites-card { flex: 2 1 320px; padding-bottom: 8px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .sort { background: none; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit; }

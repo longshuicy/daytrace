@@ -134,13 +134,6 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
           : <Tile label="Total commits" value="—" note="no commits yet" />}
       </section>
 
-      {(h.shipped.length > 0 || h.working_on.length > 0) && (
-        <section className="g2">
-          {h.shipped.length > 0 && <ShippedCard items={h.shipped} />}
-          {h.working_on.length > 0 && <WorkingOnCard label="Working on" items={h.working_on} />}
-        </section>
-      )}
-
       <section className="card activity" aria-label="Activity">
         <div className="card-head">
           <div className="segmented" role="tablist" aria-label="Activity view">
@@ -171,6 +164,13 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
         )}
         {view === "table" && <EventTable day={day} />}
       </section>
+
+      {(h.shipped.length > 0 || h.working_on.length > 0) && (
+        <section className="g2">
+          {h.shipped.length > 0 && <ShippedCard items={h.shipped} />}
+          {h.working_on.length > 0 && <WorkingOnCard label="Working on" items={h.working_on} />}
+        </section>
+      )}
 
       <ProjectsAndSites projects={s.projects} sites={day.sites} />
     </>

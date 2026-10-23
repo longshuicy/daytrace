@@ -123,6 +123,7 @@ def test_day_json_groups_stretch_and_line(tmp_path, rules, projects):
         raw("zoom", nine + timedelta(hours=2), 60, app="zoom.us"),  # meetings never count as a stretch
         raw("song", nine, 20, app="Spotify", title="song"),
         raw("c1", nine + timedelta(minutes=50), category="commit", title="Fix it", path=pdg),
+        raw("blip", nine + timedelta(hours=3), 0.2, app="Slack", title="glance"),  # 12 seconds
     ]
     now = nine + timedelta(hours=4)
     sync(s, rules, [Fake("fake", events)], now)
@@ -140,6 +141,8 @@ def test_day_json_groups_stretch_and_line(tmp_path, rules, projects):
     song = next(b for b in d["blocks"] if b["sensitivity"] == "private")
     assert song["titles"] == [] and song["project"] is None
     assert [p["title"] for p in d["points"]] == ["Fix it"]
+    # Too short to read as more than "0m": not drawn, though it still counts toward the totals.
+    assert all(b["titles"] != ["glance"] for b in d["blocks"])
 
 
 def test_highlights_from_stored_traces(tmp_path, rules, projects):

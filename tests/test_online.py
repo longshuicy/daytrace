@@ -91,6 +91,23 @@ def test_github_title_lookup_caches():
     assert calls == ["/repos/IN-CORE/incore-helm/issues/9"]
 
 
+def test_github_opened_from_search_and_feed_once(tmp_path, rules):
+    item = {"number": 5, "title": "Flaky test", "html_url": "https://github.com/IN-CORE/incore-helm/issues/5",
+            "created_at": "2026-10-22T13:10:00Z", "repository_url": "https://api.github.com/repos/IN-CORE/incore-helm"}
+    feed = [{**_gh("IssuesEvent", {"action": "opened", "issue": {"number": 5, "title": "Flaky test"}}),
+             "created_at": "2026-10-22T13:40:00Z"},  # the feed reports it late
+            {**_gh("PullRequestEvent", {"action": "merged", "number": 7}), "id": "43"}]
+    gh = GitHub(token="t")
+    gh._get = lambda path: ({"login": "me"} if path == "/user" else {"items": [item]} if path.startswith("/search")
+                            else {"title": "Bump chart"} if path.startswith("/repos") else feed if "page=1" in path else [])
+    s = Store(tmp_path / "t.db")
+    s.set_meta("day_zero", iso(T0 - timedelta(days=1)))
+    sync(s, rules, [gh], T0 + timedelta(hours=8))
+    rows = s.conn.execute("SELECT title, start_at FROM events ORDER BY start_at").fetchall()
+    assert [tuple(r) for r in rows] == [("Opened issue #5: Flaky test", "2026-10-22T13:10:00Z"),
+                                        ("Merged PR #7: Bump chart", "2026-10-22T14:00:00Z")]
+
+
 def test_github_event_in_private_clone_is_redacted(rules, projects):
     rules.private_paths = [projects / "personal/twentyfour"]
     raw = gh_raw(_gh("IssuesEvent", {"action": "opened", "issue": {"number": 1, "title": "Secret plans"}},
