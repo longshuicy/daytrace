@@ -119,6 +119,25 @@ class Store:
             )
         return cur.rowcount
 
+    def backup(self, dest: Path) -> None:
+        """A consistent copy of the whole database, even while a sync is writing."""
+        target = sqlite3.connect(dest)
+        try:
+            self.conn.backup(target)
+        finally:
+            target.close()
+
+    def start_over(self, zero: str) -> int:
+        """Delete events that ended before zero and the week and month summaries, track from zero,
+        and shrink the file. Cursors stay, so syncing carries on where it was."""
+        with self.conn:
+            cur = self.conn.execute("DELETE FROM events WHERE COALESCE(end_at, start_at) < ?", (zero,))
+            self.conn.execute("DELETE FROM day_summaries")
+            self.conn.execute("INSERT INTO meta (key, value) VALUES ('day_zero', ?) "
+                              "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (zero,))
+        self.conn.execute("VACUUM")
+        return cur.rowcount
+
     def counts_by_source(self) -> dict[str, int]:
         rows = self.conn.execute("SELECT source, COUNT(*) FROM events GROUP BY source")
         return {r[0]: r[1] for r in rows}

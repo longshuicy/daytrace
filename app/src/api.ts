@@ -9,6 +9,8 @@ export const syncNow = () => invoke<string>("sync_now");
 /** Build the week's or month's request for review (send false), or send the reviewed request minus exclusions. */
 export const summarizePeriod = (kind: PeriodKind, date: string, send: boolean, exclude: Exclusion[] = []) =>
   invoke<string>("summarize", { date, send, period: kind, exclude: send ? JSON.stringify(exclude) : null });
+/** Copy the database to ~/.daytrace/backups; with startOver, then keep only today. */
+export const backup = (startOver: boolean) => invoke<string>("backup", { startOver });
 export const showDay = (date?: string) => invoke("show_day", { date: date ?? null });
 
 const REFRESH_MS = 60_000;

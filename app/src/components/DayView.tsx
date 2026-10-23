@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useState } from "react";
-import { syncNow, useDay } from "../api";
+import { backup, syncNow, useDay } from "../api";
 import {
   GROUP_LABEL, LANES, SOURCE_LABEL, clock, colorVar, longDate, minutes, shiftDate, today,
 } from "../format";
@@ -91,6 +91,7 @@ function DayBody({ date, tooltip }: { date: string; tooltip: ReturnType<typeof u
       </header>
       {error && <div className="notice error">Couldn't load this day: {error}</div>}
       {day && <SyncAlert day={day} />}
+      {day && day.storage.bytes > day.storage.limit && <StorageAlert storage={day.storage} />}
       {day && <Body day={day} fullDay={fullDay} setFullDay={setFullDay} view={view} setView={setView} tooltip={tooltip} />}
     </>
   );
@@ -187,6 +188,38 @@ function SyncAlert({ day }: { day: Day }) {
       {failing.map((src) => src.error && (
         <div key={src.name} className="muted error-detail">{SOURCE_LABEL[src.name] ?? src.name}: {src.error}</div>
       ))}
+    </div>
+  );
+}
+
+const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
+
+/** Past the size limit: back up, then keep only today. Asks twice, since it deletes earlier days. */
+function StorageAlert({ storage }: { storage: Day["storage"] }) {
+  const [state, setState] = useState<"idle" | "confirm" | "busy">("idle");
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const run = () => {
+    setState("busy");
+    backup(true).then(
+      (text) => { setResult({ ok: true, text }); setState("idle"); },
+      (e) => { setResult({ ok: false, text: String(e) }); setState("idle"); },
+    );
+  };
+  return (
+    <div className="notice">
+      daytrace's database is {mb(storage.bytes)}, over {mb(storage.limit)}. Back it up and start over: the whole
+      database is copied to ~/.daytrace/backups, then everything before today is deleted here.
+      <div className="actions">
+        {state === "confirm"
+          ? <>
+            <button className="primary" onClick={run}>Yes, back up and delete earlier days</button>
+            <button className="quiet" onClick={() => setState("idle")}>Cancel</button>
+          </>
+          : <button className="primary" onClick={() => setState("confirm")} disabled={state === "busy"}>
+            {state === "busy" ? "Backing up…" : "Back up and start over"}
+          </button>}
+      </div>
+      {result && <div className={`error-detail${result.ok ? " muted" : ""}`}>{result.text}</div>}
     </div>
   );
 }

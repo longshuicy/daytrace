@@ -246,3 +246,23 @@ def test_top_sites_list_pages_without_a_site_by_title(tmp_path, rules):
         {"site": "Notes on choosing a widget library for the lab", "minutes": 4, "page": True},
         {"site": "GitHub", "minutes": 3, "page": False},
     ]
+
+
+def test_backup_then_start_over(tmp_path, rules):
+    s = store(tmp_path)
+    nine = datetime(2026, 10, 22, 9, 0).astimezone()
+    late = raw("late", nine.replace(hour=23, minute=50), 20, app="Code", title="a — PDG")  # runs past midnight
+    sync(s, rules, [Fake("fake", [raw("old", nine, 30, app="Code", title="a — PDG"), late,
+                                  raw("new", nine + timedelta(days=1), 30, app="Code", title="b — PDG")])],
+         nine + timedelta(days=1, hours=1))
+    s.save_summary("week:2026-10-18", {}, "a week", "m", nine)
+    s.backup(tmp_path / "copy.db")
+
+    zero = iso(datetime(2026, 10, 23).astimezone())
+    assert s.start_over(zero) == 1
+    assert {r["source_id"] for r in s.conn.execute("SELECT source_id FROM events")} == {"late", "new"}
+    assert s.get_meta("day_zero") == zero and s.summary("week:2026-10-18") is None
+    assert s.get_cursor("fake")  # syncing carries on where it was
+    copy = Store(tmp_path / "copy.db")
+    assert copy.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 3
+    assert copy.summary("week:2026-10-18")["narrative"] == "a week"

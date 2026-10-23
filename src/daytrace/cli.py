@@ -80,6 +80,7 @@ def cmd_day(args) -> None:
     statuses = {name: json.loads(value) for name, value in _statuses(store, rules).items()}
     rows, now = store.events_between(iso(start), iso(end)), datetime.now(UTC)
     data = dayjson.build(day, rows, statuses, store.counts_by_source(), day_zero(store), now)
+    data["storage"] = {"bytes": config.db_path().stat().st_size, "limit": config.STORAGE_LIMIT}
     print(dayjson.dumps(data))
 
 
@@ -134,6 +135,21 @@ def cmd_forget(args) -> None:
     start = day_bounds(date.fromisoformat(args.start))[0]
     end = day_bounds(date.fromisoformat(args.end))[1]
     print(f"deleted {store.delete_between(iso(start), iso(end))} events")
+
+
+def cmd_backup(args) -> None:
+    store, _ = _open()
+    folder = config.backup_dir()
+    folder.mkdir(mode=0o700, exist_ok=True)
+    dest = folder / f"daytrace-{datetime.now():%Y-%m-%d-%H%M%S}.db"
+    store.backup(dest)
+    dest.chmod(0o600)
+    print(f"backed up to {dest} ({dest.stat().st_size / 1024 / 1024:.1f} MB)")
+    if args.start_over:
+        zero = datetime.combine(date.today(), time.min).astimezone()
+        deleted = store.start_over(iso(zero))
+        print(f"started over: deleted {deleted} events before today; now "
+              f"{config.db_path().stat().st_size / 1024 / 1024:.1f} MB")
 
 
 def cmd_connect(args) -> None:
@@ -194,6 +210,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("start", help="YYYY-MM-DD")
     p.add_argument("end", help="YYYY-MM-DD, inclusive")
     p.set_defaults(func=cmd_forget)
+
+    p = sub.add_parser("backup", help=f"copy the database to {config.backup_dir()}")
+    p.add_argument("--start-over", action="store_true", help="then keep only today and track from today")
+    p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("connect", help="sign in to a service that needs it")
     p.add_argument("service", choices=["outlook"])

@@ -77,6 +77,8 @@ export interface Day {
   idle: { start: string; end: string }[];
   sites: Site[];
   highlights: Highlights;
+  /** Size of the database file and the size at which the app asks for a backup. */
+  storage: { bytes: number; limit: number };
 }
 
 export interface Story {

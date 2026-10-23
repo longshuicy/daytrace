@@ -12,6 +12,13 @@ def db_path() -> Path:
     return home() / "daytrace.db"
 
 
+STORAGE_LIMIT = 150 * 1024 * 1024  # past this the app asks you to back up and start over
+
+
+def backup_dir() -> Path:
+    return home() / "backups"
+
+
 def rules_path() -> Path:
     return home() / "rules.toml"
 
