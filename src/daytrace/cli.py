@@ -48,14 +48,14 @@ def cmd_sync(args) -> None:
     for r in results:
         if not r.configured:
             if not args.quiet:
-                print(f"{r.source:<14} not configured ({r.error})")
+                print(f"{r.source:<17} not configured ({r.error})")
         elif r.ok and not args.quiet:
             extra = f", {r.dropped} dropped" if r.dropped else ""
             extra += f", {r.purged} raw purged" if r.purged else ""
             extra += f", {r.removed} removed" if r.removed else ""
-            print(f"{r.source:<14} {r.stored} events{extra}")
+            print(f"{r.source:<17} {r.stored} events{extra}")
         elif not r.ok:
-            print(f"{r.source:<14} FAILED {r.error}", file=sys.stderr)
+            print(f"{r.source:<17} FAILED {r.error}", file=sys.stderr)
 
 
 def cmd_today(args) -> None:
@@ -85,8 +85,8 @@ def cmd_day(args) -> None:
 
 def cmd_status(args) -> None:
     store, rules = _open()
-    print(f"home         {config.home()}")
-    print(f"tracking     since {day_zero(store).astimezone():%Y-%m-%d %H:%M}")
+    print(f"home              {config.home()}")
+    print(f"tracking          since {day_zero(store).astimezone():%Y-%m-%d %H:%M}")
     counts = store.counts_by_source()
     for adapter in all_adapters(rules):
         raw = store.get_meta(f"status:{adapter.name}")
@@ -96,8 +96,8 @@ def cmd_status(args) -> None:
             last, state = "not configured", ""
         else:
             state = "" if not st or st["ok"] else f"  FAILED {st['error']}"
-        print(f"{adapter.name:<12} {counts.get(adapter.name, 0):>6} events  {last}{state}")
-    print(f"agent        {'installed' if launchd.plist_path().exists() else 'not installed'}")
+        print(f"{adapter.name:<17} {counts.get(adapter.name, 0):>6} events  {last}{state}")
+    print(f"agent             {'installed' if launchd.plist_path().exists() else 'not installed'}")
 
 
 def cmd_forget(args) -> None:
