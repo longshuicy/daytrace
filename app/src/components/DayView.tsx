@@ -165,20 +165,28 @@ function Projects({ day }: { day: Day }) {
 }
 
 function Traces({ day }: { day: Day }) {
-  const points = [...day.points].sort((a, b) => a.at.localeCompare(b.at));
-  if (!points.length) return <div className="empty">No commits, PRs or wiki edits yet.</div>;
+  // Single traces plus calendar meetings: the discrete things in the day, in time order.
+  const meetings = day.blocks.filter((b) => b.evidence === "scheduled");
+  const items = [
+    ...day.points.map((p) => ({ at: p.at, end: null as string | null, group: p.group, category: p.category,
+      title: p.title, url: p.url, project: p.project, sensitivity: p.sensitivity, scheduled: false })),
+    ...meetings.map((b) => ({ at: b.start, end: b.end, group: b.group, category: b.category,
+      title: b.titles[0] ?? null, url: b.url, project: b.project, sensitivity: b.sensitivity, scheduled: true })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  if (!items.length) return <div className="empty">No meetings, commits, PRs or wiki edits yet.</div>;
   return (
     <ul className="traces">
-      {points.map((p, i) => (
+      {items.map((t, i) => (
         <li key={i}>
-          <span className="tabular muted">{clock(p.at)}</span>
-          <span className="swatch round" style={{ background: colorVar(p.group) }} />
-          <span className="trace-kind">{CATEGORY_LABEL[p.category] ?? p.category}</span>
-          {p.sensitivity === "work" ? (
-            p.url ? <button className="link" onClick={() => openUrl(p.url!)}>{p.title ?? p.url}</button>
-              : <span>{p.title}</span>
+          <span className="tabular muted trace-time">{clock(t.at)}{t.end ? `–${clock(t.end)}` : ""}</span>
+          <span className="swatch round" style={{ background: colorVar(t.group) }} />
+          <span className="trace-kind">{CATEGORY_LABEL[t.category] ?? t.category}</span>
+          {t.sensitivity === "work" ? (
+            t.url ? <button className="link" onClick={() => openUrl(t.url!)}>{t.title ?? t.url}</button>
+              : <span>{t.title}</span>
           ) : <span className="muted">non-work — details not kept</span>}
-          {p.project && <span className="tag">{p.project}</span>}
+          {t.scheduled && <span className="tag">scheduled</span>}
+          {t.project && <span className="tag">{t.project}</span>}
         </li>
       ))}
     </ul>

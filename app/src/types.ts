@@ -15,6 +15,7 @@ export interface Block {
   evidence: Evidence;
   source: string;
   titles: string[];
+  url: string | null;
 }
 
 export interface Point {

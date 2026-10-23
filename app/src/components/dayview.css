@@ -76,6 +76,7 @@ tr:last-child td { border-bottom: none; }
 .traces { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
 .traces li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--grid); min-width: 0; }
 .traces li:last-child { border-bottom: none; }
+.trace-time { width: 78px; flex-shrink: 0; }
 .trace-kind { color: var(--ink-2); width: 84px; flex-shrink: 0; }
 .traces .link, .traces li > span:nth-child(4) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; text-align: left; }
 .link { background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 2px; }

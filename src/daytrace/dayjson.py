@@ -133,17 +133,18 @@ def _blocks(spans: list) -> list[dict]:
     keyed = defaultdict(list)
     for r, s, e in spans:
         key = (r["source"], r["category"], r["project"], r["sensitivity"], r["evidence"])
-        keyed[key].append((s, e, r["title"]))
+        keyed[key].append((s, e, r["title"], r["url"]))
     blocks = []
     for (source, category, project, sensitivity, evidence), items in keyed.items():
         items.sort(key=lambda i: i[0])
         current = None
-        for s, e, title in items:
+        for s, e, title, url in items:
             if current and s <= current["_end"] + BLOCK_GAP:
                 current["_end"] = max(current["_end"], e)
             else:
-                current = {"_start": s, "_end": e, "_titles": Counter()}
+                current = {"_start": s, "_end": e, "_titles": Counter(), "_url": None}
                 blocks.append((current, source, category, project, sensitivity, evidence))
+            current["_url"] = current["_url"] or url
             if title:
                 current["_titles"][title] += (e - s).total_seconds()
     out = []
@@ -154,6 +155,7 @@ def _blocks(spans: list) -> list[dict]:
             "group": group_of(category, sensitivity), "category": category, "project": project,
             "sensitivity": sensitivity, "evidence": evidence, "source": source,
             "titles": [t for t, _ in b["_titles"].most_common(3)],
+            "url": b["_url"] if evidence == "scheduled" else None,
         })
     return sorted(out, key=lambda b: b["start"])
 
