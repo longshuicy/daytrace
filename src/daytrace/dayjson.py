@@ -8,11 +8,10 @@ from datetime import date, datetime, timedelta
 from .models import parse_iso
 from .report import day_bounds, merge, total
 
-# Display groups, in fixed palette order. Categories not listed fall into "other".
+# Display groups, in fixed palette order. Categories not listed fall into "other"; private time is "private".
 GROUPS = [
     ("coord", "Meetings & mail", {"meeting", "email", "chat"}),
-    ("code", "Coding", {"code", "terminal", "commit", "push"}),
-    ("ai", "AI pairing", {"ai"}),
+    ("code", "Coding", {"code", "terminal", "commit", "push", "ai"}),
     ("review", "Review & issues", {"pr", "review", "issue", "release", "repo"}),
     ("writing", "Docs & wiki", {"docs", "wiki"}),
     ("browse", "Browsing", {"browse"}),
@@ -20,13 +19,17 @@ GROUPS = [
 _GROUP_OF = {cat: key for key, _, cats in GROUPS for cat in cats}
 BLOCK_GAP = timedelta(minutes=1)
 STRETCH_GAP = timedelta(minutes=5)
+INTERRUPTION = timedelta(minutes=2)  # meetings, mail, chat or private time at least this long break focus
+AWAY = timedelta(minutes=5)          # so does being away from the keyboard longer than this
+MIN_SITE = timedelta(minutes=1)
+MAX_SITES = 8
+SHIPPED = ("pr", "release", "wiki", "issue")  # traces that put something out into the world
+MAIN_BRANCHES = ("HEAD", "main", "master", "develop")
 
 
 def group_of(category: str, sensitivity: str) -> str:
-    if sensitivity == "personal":
-        return "nonwork"
-    if sensitivity == "unknown":
-        return "unknown"
+    if sensitivity == "private":
+        return "private"
     return _GROUP_OF.get(category, "other")
 
 
@@ -39,13 +42,13 @@ def _minutes(td: timedelta) -> int:
 
 
 def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts: dict[str, int],
-          day_zero: datetime, now: datetime, story: dict | None = None, episodes: list[dict] = ()) -> dict:
+          day_zero: datetime, now: datetime, story: dict | None = None) -> dict:
     start, end = day_bounds(day)
     spans, points, idle = [], [], []
     received = 0
     for r in rows:
         if r["category"] == "inbox":  # received mail is context, counted but not drawn
-            received += r["sensitivity"] == "work"
+            received += r["sensitivity"] != "private"
             continue
         if r["end_at"]:
             s, e = max(parse_iso(r["start_at"]), start), min(parse_iso(r["end_at"]), end)
@@ -61,32 +64,31 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
     blocks = _blocks(spans)  # drawn in full, including meetings later today
     # Stats only count what has happened: scheduled time after now is not time spent.
     spans = [(r, s, min(e, now)) for r, s, e in spans if min(e, now) > s]
-    work = [(s, e) for r, s, e in spans if r["sensitivity"] == "work"]
+    private = [(s, e) for r, s, e in spans if r["sensitivity"] == "private"]
     by_group, by_project = defaultdict(list), defaultdict(list)
     for r, s, e in spans:
         by_group[group_of(r["category"], r["sensitivity"])].append((s, e))
-        if r["sensitivity"] == "work" and r["project"]:
+        if r["project"]:
             by_project[r["project"]].append((s, e))
 
-    point_counts = Counter(p["category"] for p in points if p["sensitivity"] == "work")
+    point_counts = Counter(p["category"] for p in points if p["sensitivity"] != "private")
     project_points = defaultdict(Counter)
     for p in points:
-        if p["sensitivity"] == "work" and p["project"]:
+        if p["project"]:
             project_points[p["project"]][p["category"]] += 1
 
     projects = sorted(set(by_project) | set(project_points),
                       key=lambda p: (-total(by_project.get(p, [])), p))
-    longest = _longest_stretch(spans)
+    longest = _longest_focus(spans, idle)
     # Meetings come from the calendar; Zoom windows seen by ActivityWatch would double count.
-    calendar = [(s, e) for r, s, e in spans if r["kind"] == "plan" and r["sensitivity"] == "work"]
+    calendar = [(s, e) for r, s, e in spans if r["kind"] == "plan" and r["sensitivity"] != "private"]
     active = [(s, e) for _, s, e in spans] + [(parse_iso(p["start_at"]),) * 2 for p in points]
 
     summary = {
         "first": _local(min((s for s, _ in active), default=None)),
         "last": _local(max((e for _, e in active), default=None)),
-        "work_min": _minutes(total(work)),
-        "nonwork_min": _minutes(total(by_group.get("nonwork", []))),
-        "unknown_min": _minutes(total(by_group.get("unknown", []))),
+        "active_min": _minutes(total([(s, e) for _, s, e in spans])),
+        "private_min": _minutes(total(private)),
         "idle_min": _minutes(total(idle)),
         "groups": {k: _minutes(total(v)) for k, v in by_group.items()},
         "projects": [{
@@ -125,13 +127,61 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "source": p["source"], "title": p["title"], "url": p["url"],
         } for p in points],
         "idle": [{"start": _local(s), "end": _local(e)} for s, e in merge(idle)],
+        "sites": _sites(spans),
+        "highlights": _highlights(points, spans, summary),
         "story": _story(story),
-        "episodes": [{
-            "id": ep["id"], "start": _local(parse_iso(ep["start_at"])), "end": _local(parse_iso(ep["end_at"])),
-            "kind": ep.get("kind"), "project": ep.get("project"), "group": ep.get("group") or "code",
-            "minutes": ep.get("minutes", 0), "label": ep.get("label"), "counts": ep.get("counts", {}),
-        } for ep in episodes],
     }
+
+
+def _highlights(points: list, spans: list, summary: dict) -> dict:
+    """What the day produced, from data already stored: what went out, the biggest commit, the branches
+    Claude Code sessions were on, and the longest focus. Meetings and mail have their own tiles."""
+    shown = [p for p in points if p["sensitivity"] != "private"]
+    shipped = [{"title": p["title"], "url": p["url"], "project": p["project"], "category": p["category"]}
+               for p in shown if p["category"] in SHIPPED and p["title"]]
+
+    biggest = None
+    for p in shown:
+        if p["category"] != "commit":
+            continue
+        a = json.loads(p["attrs"] or "{}")
+        size = (a.get("insertions") or 0) + (a.get("deletions") or 0)
+        if size and (biggest is None or size > biggest["_size"]):
+            biggest = {"_size": size, "title": p["title"], "project": p["project"], "files": a.get("files") or 0,
+                       "insertions": a.get("insertions") or 0, "deletions": a.get("deletions") or 0}
+    if biggest:
+        del biggest["_size"]
+
+    branches = defaultdict(list)
+    for r, s, e in spans:
+        branch = json.loads(r["attrs"] or "{}").get("branch") if r["source"] == "claude_code" else None
+        if branch and branch not in MAIN_BRANCHES and r["sensitivity"] != "private":
+            branches[(r["project"], branch)].append((s, e))
+    working_on = sorted(({"project": p, "branch": b, "minutes": _minutes(total(v))} for (p, b), v in branches.items()),
+                        key=lambda w: -w["minutes"])[:3]
+
+    return {
+        "shipped": shipped,
+        "biggest": biggest,
+        "working_on": [w for w in working_on if w["minutes"]],
+        "focus": summary["longest"],
+    }
+
+
+def _sites(spans: list) -> list[dict]:
+    """Browser time per site, named from tab titles. Sites under two minutes are folded into "Other pages"."""
+    by_site = defaultdict(list)
+    for r, s, e in spans:
+        attrs = json.loads(r["attrs"] or "{}")
+        if r["sensitivity"] != "private" and attrs.get("app") and (attrs.get("site") or r["category"] == "browse"):
+            by_site[attrs.get("site")].append((s, e))
+    named = sorted(((site, total(v)) for site, v in by_site.items() if site), key=lambda kv: -kv[1])
+    shown = [(site, td) for site, td in named if td >= MIN_SITE][:MAX_SITES]
+    rest = [iv for site, v in by_site.items() if site not in dict(shown) for iv in v]
+    out = [{"site": site, "minutes": _minutes(td)} for site, td in shown]
+    if rest and total(rest) >= MIN_SITE:
+        out.append({"site": None, "minutes": _minutes(total(rest))})
+    return out
 
 
 def _story(row: dict | None) -> dict | None:
@@ -141,12 +191,12 @@ def _story(row: dict | None) -> dict | None:
     return {
         "narrative": row["narrative"], "themes": stats.get("themes", []), "model": row["model"],
         "generated_at": _local(parse_iso(row["generated_at"])), "dry_run": bool(stats.get("dry_run")),
-        "audit": stats.get("audit"),
+        "audit": stats.get("audit"), "entries": stats.get("entries", 0),
     }
 
 
 def _blocks(spans: list) -> list[dict]:
-    """Merge adjacent spans of the same kind; keep the top titles by time for work blocks."""
+    """Merge adjacent spans of the same kind; keep the top titles by time."""
     keyed = defaultdict(list)
     for r, s, e in spans:
         key = (r["source"], r["category"], r["project"], r["sensitivity"], r["evidence"])
@@ -172,26 +222,64 @@ def _blocks(spans: list) -> list[dict]:
             "group": group_of(category, sensitivity), "category": category, "project": project,
             "sensitivity": sensitivity, "evidence": evidence, "source": source,
             "titles": [t for t, _ in b["_titles"].most_common(3)],
-            "url": b["_url"] if evidence == "scheduled" else None,
+            "url": b["_url"] if source == "outlook_calendar" else None,
         })
     return sorted(out, key=lambda b: b["start"])
 
 
-def _longest_stretch(spans: list) -> dict | None:
-    """Longest run of work on one project outside meetings and mail, allowing 5-minute gaps."""
-    per_project = defaultdict(list)
+def _longest_focus(spans: list, idle: list) -> dict | None:
+    """Longest stretch of activity without interruptions, labeled by what took most of it.
+
+    Any non-private activity outside meetings and mail counts (code, docs, PDFs, the browser), with gaps under
+    5 minutes joined. Meetings, mail, chat or private time of 2 minutes or more, and more than 5 minutes away
+    from the keyboard, cut a stretch. The label is the project with the most time in it, else a document, else
+    a site, else an app, decided per span.
+    """
+    work, breaks = [], [(s, e) for s, e in idle if e - s > AWAY]
     for r, s, e in spans:
-        if r["sensitivity"] == "work" and r["project"] and group_of(r["category"], "work") != "coord":
-            per_project[r["project"]].append((s, e))
-    best = None
-    for project, intervals in per_project.items():
-        for s, e in merge(intervals, gap=STRETCH_GAP):
-            if best is None or e - s > best[2] - best[1]:
-                best = (project, s, e)
-    if best is None:
+        if r["sensitivity"] == "private" or group_of(r["category"], r["sensitivity"]) == "coord":
+            if e - s >= INTERRUPTION:
+                breaks.append((s, e))
+        else:
+            work.append((r, s, e))
+    breaks = merge(breaks)
+    segments = [seg for iv in merge([(s, e) for _, s, e in work], gap=STRETCH_GAP) for seg in _cut(iv, breaks)]
+    if not segments:
         return None
-    project, s, e = best
-    return {"project": project, "minutes": _minutes(e - s), "start": _local(s), "end": _local(e)}
+    s0, e0 = max(segments, key=lambda iv: iv[1] - iv[0])
+    weight = defaultdict(timedelta)
+    for r, s, e in work:
+        a, b = max(s, s0), min(e, e0)
+        if b > a:
+            weight[_focus_key(r)] += b - a
+    kind, label = max(weight, key=weight.get)
+    return {"label": label, "kind": kind, "minutes": _minutes(e0 - s0), "start": _local(s0), "end": _local(e0)}
+
+
+def _cut(interval: tuple, breaks: list) -> list[tuple]:
+    """interval minus the (merged, sorted) breaks."""
+    s, e = interval
+    out = []
+    for bs, be in breaks:
+        if be <= s or bs >= e:
+            continue
+        if bs > s:
+            out.append((s, bs))
+        s = max(s, be)
+    if e > s:
+        out.append((s, e))
+    return out
+
+
+def _focus_key(r) -> tuple[str, str]:
+    attrs = json.loads(r["attrs"] or "{}")
+    if r["project"]:
+        return ("project", r["project"])
+    if r["category"] in ("docs", "wiki") and r["title"]:
+        return ("document", r["title"])
+    if attrs.get("site"):
+        return ("site", attrs["site"])
+    return ("app", attrs.get("app") or r["category"])
 
 
 def fmt_minutes(minutes: int) -> str:
@@ -201,10 +289,10 @@ def fmt_minutes(minutes: int) -> str:
 
 def pill_line(summary: dict) -> str:
     parts = []
-    if summary["work_min"]:
-        parts.append(f"{fmt_minutes(summary['work_min'])} work")
+    if summary["active_min"]:
+        parts.append(f"{fmt_minutes(summary['active_min'])} active")
     if summary["longest"] and summary["longest"]["minutes"] >= 10:
-        parts.append(f"longest {fmt_minutes(summary['longest']['minutes'])} on {summary['longest']['project']}")
+        parts.append(f"longest focus {fmt_minutes(summary['longest']['minutes'])} on {summary['longest']['label']}")
     c = summary["counts"]
     for key, word in (("meetings", "meeting"), ("commits", "commit"), ("prs", "PR"), ("wiki", "wiki edit")):
         if c[key]:

@@ -8,7 +8,7 @@ UTC = timezone.utc
 
 KINDS = ("point", "span", "plan")
 EVIDENCE = ("observed", "scheduled", "recorded", "inferred")
-SENSITIVITY = ("work", "personal", "unknown")
+SENSITIVITY = ("normal", "private")
 
 
 def iso(dt: datetime) -> str:
@@ -39,10 +39,9 @@ class RawEvent:
     app: str | None = None
     title: str | None = None
     url: str | None = None
-    path: str | None = None  # repo or working directory, used for classification
+    path: str | None = None  # repo or working directory, used for the project and the private check
     owner: str | None = None  # GitHub owner and repo name, for events with no local path
     repo: str | None = None
-    always_work: bool = False  # e.g. every Outlook or Confluence event
     attrs: dict = field(default_factory=dict)
 
 

@@ -10,13 +10,15 @@ a timeline, honest statistics, and an LLM-written description of the day.
 
 ## 1. Principles
 
-1. **Local-first.** All data lives on this Mac. The only thing that leaves is work-only payloads to Lumen.
-2. **Known vs. inferred.** Every fact carries its evidence level. A calendar event means *scheduled*, not *attended*.
-   An email timestamp means *sent at*, not *time spent writing*. LLM output is always *inferred* and links back to
+1. **Local-first.** All data lives on this Mac. The only thing that leaves is scrubbed day payloads to Lumen.
+2. **Known vs. inferred.** Every fact carries its evidence level. Calendar meetings are taken as
+   attended: checking attendance isn't worth the complexity. An email timestamp means *sent at*, not *time spent writing*. LLM output is always *inferred* and links back to
    the events it came from.
 3. **Not a productivity tool.** No scores, no streaks, no goals. It describes; it doesn't judge.
 4. **Overlap is normal.** Browsing during a meeting is not a bug. Categories don't need to sum to 24 hours.
-5. **Fail closed.** When in doubt whether something is work, it is treated as personal: kept local, never sent.
+5. **Private by list, not by guess.** Sorting work from personal proved unworkable. Instead a short `[private]`
+   list (apps, titles, folders, browser profiles) marks what is personal; that is kept as time only and never
+   sent. Everything else is plain activity. The dry-run audit is the check on what would leave.
 
 ## 2. Scope (v1)
 
@@ -85,7 +87,7 @@ CREATE TABLE events (
   project     TEXT,                    -- normalized project key, e.g. 'incore', 'pdg'
   title       TEXT,                    -- redacted, may be null
   url         TEXT,                    -- link back to source (query string stripped)
-  sensitivity TEXT NOT NULL,           -- 'work' | 'personal' | 'unknown'
+  sensitivity TEXT NOT NULL,           -- 'normal' | 'private'
   attrs       TEXT,                    -- JSON, source-specific extras
   ingested_at TEXT NOT NULL
 );
@@ -106,29 +108,23 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);   -- day_zero, schema_vers
 
 Runs on every raw event **before** it is written to `events`.
 
-1. **Classify sensitivity** with rules from `~/.daytrace/rules.toml`:
+1. **Drop** private/incognito windows entirely (not stored at all).
+2. **Private check** with `[private]` in `~/.daytrace/rules.toml`:
 
    ```toml
-   [work]
-   github_orgs   = ["IN-CORE", "PermafrostDiscoveryGateway"]   # TBD
-   repo_paths    = ["~/Documents/Projects/*"]
-   apps          = ["Microsoft Outlook", "Microsoft Teams", "zoom.us", "Code", "iTerm2", "Terminal"]
-   domains       = ["*.illinois.edu", "*.atlassian.net", "github.com"]
-   google_account = "cwang138@illinois.edu"
-
-   [personal]                       # always wins over [work]
-   repo_paths = ["~/Documents/Projects/personal/*"]
-   apps       = ["Messages", "WhatsApp", "Spotify", "Photos"]
-   title_patterns = ["(?i)private browsing", "(?i)incognito", "(?i)bank", "(?i)gmail\\.com"]
+   [private]
+   apps = ["Messages", "WhatsApp", "FaceTime", "Photos"]
+   titles = ["(?i)\\bbank", "(?i)gmail\\.com"]
+   paths = []              # folders whose commits, sessions and windows are private
+   browser_profiles = []   # Chrome profile names from window titles
+   drop = ["(?i)private browsing", "(?i)incognito"]
    ```
 
-   Order: `personal` match → personal; else `work` match → work; else **unknown**.
-   An app match alone isn't enough for editors/terminals: VS Code is work only if the title resolves to a work repo.
-
-2. **Drop** private/incognito windows entirely (not stored at all).
-3. **Categorize**: map app + title → `category` and `project`.
-4. **Redact**: personal/unknown events keep only `category` and duration — title set to null.
-   Work titles pass a secret scrubber (tokens, keys, long hex/base64, `password=`). URLs lose query strings.
+   A match makes the event `private`: it keeps only its timing, with category `private` and no app, title, URL
+   or project. GitHub events are checked against the path of their local clone.
+3. **Categorize** everything else: map app + title → `category`, and path → `project` (the top-level folder under
+   the most specific root in `[paths] projects`).
+4. **Scrub**: titles pass a secret scrubber (tokens, keys, long hex/base64, `password=`). URLs lose query strings.
 5. **Raw retention**: ActivityWatch raw buckets older than **7 days** are deleted after they've been ingested
    (configurable). daytrace keeps only the transformed events.
 
@@ -137,7 +133,7 @@ Runs on every raw event **before** it is written to `events`.
 Per day / week:
 
 - Time by category (overlap-aware: union of spans, not sum)
-- Meeting load: count, total scheduled hours, back-to-back chains
+- Meeting load: count, total hours, back-to-back chains
 - Focus blocks: contiguous ≥ 25 min in one project with no meeting and < N app switches
 - Context switches per hour; project switches per day
 - First / last active time; idle gaps
@@ -145,7 +141,7 @@ Per day / week:
 - Projects touched, with time per project
 - Data completeness: which sources reported, gaps (laptop off ≠ idle)
 
-**Episodes**: cluster work events by time proximity (gap < 10 min) and shared project/repo/doc/people.
+**Episodes**: cluster non-private events by time proximity (gap < 10 min) and shared project/repo/doc/people.
 
 ## 8. LLM (Lumen) and the egress gate
 
@@ -153,8 +149,8 @@ Per day / week:
 
 **Egress gate** — the only code path that can talk to Lumen:
 
-1. Select events/episodes with `sensitivity = 'work'` only. `personal` and `unknown` are replaced by an opaque
-   block: `{"category": "non-work", "minutes": 45}`.
+1. Episodes are built from non-private events. Private time is replaced by an opaque block:
+   `{"start": "12:00", "end": "12:40", "minutes": 40}`.
 2. Project to an allowlisted field set: `start_at, end_at, category, project, title, source`. Nothing else.
 3. Run the secret scrubber again on the final payload.
 4. Write the exact payload to `audit/YYYY-MM-DD/*.json` before sending.
@@ -162,19 +158,18 @@ Per day / week:
 
 **LLM tasks**:
 
-- *Episode labels*: "Fixed the INCORE Helm chart deployment and documented it on the wiki."
-- *Day narrative*: one paragraph + 3–5 themes, given episodes + stats. Prompt requires distinguishing scheduled
-  vs. observed and not inventing time spent.
+- *Day narrative*: one paragraph + 2–4 themes, given per-project entries + stats. No per-entry labels. The prompt
+  forbids inventing time spent, and names meetings without saying what happened in them.
 
 All outputs are stored with `evidence = 'inferred'`, the model name, and the episode/event ids used.
 
 ## 9. Desktop app (Tauri)
 
 - **Menu-bar icon** — always present; shows sync status.
-- **Floating pill** — tiny always-on-top window, toggleable: a thin 24h ribbon of today so far plus one line,
-  e.g. `3 meetings · longest focus 1h40 · 4 repos`. Click to expand.
-- **Day view** — day clock, timeline with evidence styling (solid = observed, outlined = scheduled,
-  hatched = inferred), stats, narrative with "show evidence" links.
+- **Floating clock** — tiny always-on-top day clock in the bottom-right corner, toggleable; the summary line is
+  its tooltip. Click to open the day view.
+- **Day view** — Lumen's narrative on top, stats, one activity card that switches between timeline, day clock and
+  a sortable table, projects, top sites. Source status shows only as an alert when a sync fails.
 - **Week view** — stacked categories, meeting load, focus blocks.
 - **Settings** — sources on/off, rules editor, retention, Lumen dry-run toggle, audit log viewer.
 
@@ -190,7 +185,7 @@ All outputs are stored with `evidence = 'inferred'`, the model name, and the epi
 - [ ] No telemetry, no third-party analytics libs in the UI
 - [ ] Egress gate is the single network path to Lumen; covered by tests
 - [ ] Private browsing dropped at intake
-- [ ] Personal/unknown never leave the machine
+- [ ] Private events never leave the machine except as bare time ranges
 - [ ] Raw ActivityWatch data purged after retention window
 - [ ] `daytrace forget --from --to` deletes a period everywhere (events, episodes, summaries, audit)
 

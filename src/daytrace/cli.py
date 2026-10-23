@@ -19,6 +19,13 @@ def _open() -> tuple[Store, Rules]:
     return Store(config.db_path()), Rules.load(config.rules_path())
 
 
+def _statuses(store: Store, rules: Rules) -> dict[str, str]:
+    """Last sync status per current source; sources that were removed from daytrace are left out."""
+    names = {a.name for a in all_adapters(rules)}
+    rows = store.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'status:%'")
+    return {k.removeprefix("status:"): v for k, v in rows if k.removeprefix("status:") in names}
+
+
 def cmd_init(args) -> None:
     home = config.home()
     home.mkdir(parents=True, exist_ok=True)
@@ -59,28 +66,21 @@ def cmd_sync(args) -> None:
 
 
 def cmd_today(args) -> None:
-    store, _ = _open()
+    store, rules = _open()
     day = date.fromisoformat(args.date) if args.date else date.today()
     start, end = day_bounds(day)
     rows = store.events_between(iso(start), iso(end))
-    statuses = {
-        r[0].removeprefix("status:"): r[1]
-        for r in store.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'status:%'")
-    }
-    print(render(day, rows, statuses, day_zero(store)))
+    print(render(day, rows, _statuses(store, rules), day_zero(store)))
 
 
 def cmd_day(args) -> None:
-    store, _ = _open()
+    store, rules = _open()
     day = date.fromisoformat(args.date) if args.date else date.today()
     start, end = day_bounds(day)
-    statuses = {
-        r[0].removeprefix("status:"): json.loads(r[1])
-        for r in store.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'status:%'")
-    }
-    data = dayjson.build(day, store.events_between(iso(start), iso(end)), statuses,
-                         store.counts_by_source(), day_zero(store), datetime.now(UTC),
-                         story=store.summary(day.isoformat()), episodes=store.episodes(day.isoformat()))
+    statuses = {name: json.loads(value) for name, value in _statuses(store, rules).items()}
+    rows, now = store.events_between(iso(start), iso(end)), datetime.now(UTC)
+    data = dayjson.build(day, rows, statuses, store.counts_by_source(), day_zero(store), now,
+                         story=summarize.current(store, day, rows))
     print(dayjson.dumps(data))
 
 
@@ -90,7 +90,7 @@ def cmd_summarize(args) -> None:
     day = date.fromisoformat(args.date) if args.date else date.today()
     r = summarize.summarize(store, rules, day, datetime.now(UTC), send=args.send)
     if r.mode == "dry-run":
-        print(f"Dry run: {r.episodes} episodes. Nothing was sent.")
+        print(f"Dry run: {r.entries} entries. Nothing was sent.")
         print(f"The exact request is in {r.audit}")
         print("Review it, then run `daytrace summarize --send`, or set mode = \"send\" under [lumen] in rules.toml.")
     else:

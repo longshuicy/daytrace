@@ -61,6 +61,15 @@ class Store:
         if "details" not in columns:
             with self.conn:
                 self.conn.execute("ALTER TABLE episodes ADD COLUMN details TEXT")
+        if self.get_meta("privacy_model") != "private-list":
+            # work/personal/unknown became normal/private; "ai" time became plain coding.
+            with self.conn:
+                self.conn.execute("UPDATE events SET sensitivity = 'normal' WHERE sensitivity IN ('work', 'unknown')")
+                self.conn.execute("UPDATE events SET sensitivity = 'private', category = 'private', project = NULL, "
+                                  "title = NULL, url = NULL, attrs = '{}' WHERE sensitivity = 'personal'")
+                self.conn.execute("UPDATE events SET category = 'code' WHERE category = 'ai'")
+                self.conn.execute("UPDATE episodes SET sensitivity = 'normal'")
+            self.set_meta("privacy_model", "private-list")
 
     def close(self) -> None:
         self.conn.close()
@@ -92,24 +101,16 @@ class Store:
             self.conn.execute("DELETE FROM episodes WHERE day = ?", (day,))
             self.conn.executemany(
                 "INSERT INTO episodes (id, day, start_at, end_at, project, categories, sensitivity, label, "
-                "event_ids, details) VALUES (?, ?, ?, ?, ?, ?, 'work', ?, ?, ?)",
+                "event_ids, details) VALUES (?, ?, ?, ?, ?, ?, 'normal', ?, ?, ?)",
                 [(ep["id"], day, ep["start_at"], ep["end_at"], ep["project"], json.dumps(ep["activities"]),
                   ep.get("label") or labels.get(ep["id"]), json.dumps(ep["event_ids"]), details(ep))
                  for ep in episodes],
             )
 
-    def episodes(self, day: str) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT id, start_at, end_at, project, label, details FROM episodes WHERE day = ? ORDER BY start_at",
-            (day,),
-        ).fetchall()
-        return [{"id": r["id"], "start_at": r["start_at"], "end_at": r["end_at"], "project": r["project"],
-                 "label": r["label"], **json.loads(r["details"] or "{}")} for r in rows]
-
-    def set_labels(self, labels: dict[str, str]) -> None:
-        with self.conn:
-            self.conn.executemany("UPDATE episodes SET label = ? WHERE id = ?",
-                                  [(label, i) for i, label in labels.items()])
+    def episode_event_ids(self, day: str) -> set[str]:
+        """Every event id that went into the day's stored episodes."""
+        rows = self.conn.execute("SELECT event_ids FROM episodes WHERE day = ?", (day,))
+        return {i for (ids,) in rows for i in json.loads(ids or "[]")}
 
     def save_summary(self, day: str, stats: dict, narrative: str | None, model: str, now: datetime) -> None:
         with self.conn:

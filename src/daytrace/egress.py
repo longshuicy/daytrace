@@ -1,7 +1,8 @@
-"""The only path from daytrace to an LLM. Builds a work-only payload, scrubs it, and writes an audit copy.
+"""The only path from daytrace to an LLM. Builds the payload, scrubs it, and writes an audit copy.
 
-What can leave: work episodes (times, project, activity minutes, counts, a few scrubbed titles, branch names)
-and day-level counts. Non-work time leaves only as {"start", "end", "minutes"}. Nothing else.
+What can leave: one entry per project (time ranges, activity minutes, counts, up to three scrubbed titles, site
+names, branch names), totals for what was too short to list, and day-level counts. Private time leaves only as
+{"start", "end", "minutes"}. Nothing else: no page titles.
 """
 
 import json
@@ -16,9 +17,9 @@ from .scrub import scrub
 MAX_TITLE = 140
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 
-EPISODE_FIELDS = ("id", "kind", "project", "group", "start", "end", "minutes", "activities", "counts",
-                  "titles", "branches")
-STAT_FIELDS = ("work_min", "meetings", "meeting_min", "emails_sent", "emails_received", "commits", "prs",
+ENTRY_FIELDS = ("key", "kind", "project", "group", "times", "minutes", "activities", "counts", "titles", "sites",
+                "branches")
+STAT_FIELDS = ("active_min", "meetings", "meeting_min", "emails_sent", "emails_received", "commits", "prs",
                "reviews", "pushes", "wiki", "issues", "first", "last", "longest")
 
 
@@ -31,32 +32,35 @@ def _clock(iso_utc: str) -> str:
     return datetime.fromisoformat(iso_utc.replace("Z", "+00:00")).astimezone().strftime("%H:%M")
 
 
-def build_payload(day: str, episodes: list[dict], summary: dict, nonwork: list[tuple[str, str, int]]) -> dict:
-    """episodes: stored work episodes; summary: dayjson summary; nonwork: (start_iso, end_iso, minutes)."""
-    eps = []
-    for ep in episodes:
+def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
+                  private: list[tuple[str, str, int]]) -> dict:
+    """entries/also: from episodes.entries; summary: dayjson summary; private: (start_iso, end_iso, minutes)."""
+    items = []
+    for en in entries:
         item = {
-            "id": ep["id"], "kind": ep["kind"], "project": ep.get("project"), "group": ep.get("group"),
-            "start": _clock(ep["start_at"]), "end": _clock(ep["end_at"]), "minutes": ep["minutes"],
-            "activities": ep.get("activities", {}), "counts": ep.get("counts", {}),
-            "titles": [clean(t) for t in ep.get("titles", [])],
-            "branches": [clean(b) for b in ep.get("branches", [])],
+            **{k: en.get(k) for k in ("key", "kind", "project", "group", "minutes", "activities", "counts")},
+            "times": [f"{_clock(s)}–{_clock(e)}" for s, e in en["times"]],
+            "titles": [clean(t) for t in en.get("titles", [])],
+            "sites": {clean(s): m for s, m in en.get("sites", {}).items()},
+            "branches": [clean(b) for b in en.get("branches", [])],
         }
-        eps.append({k: item[k] for k in EPISODE_FIELDS})
+        items.append({k: item[k] for k in ENTRY_FIELDS})
 
     c = summary["counts"]
-    flat = {**{k: summary.get(k) for k in ("work_min", "first", "last")}, **c}
+    flat = {**{k: summary.get(k) for k in ("active_min", "first", "last")}, **c}
     stats = {k: flat.get(k) for k in STAT_FIELDS if k in flat}
     stats["first"] = _clock(summary["first"]) if summary.get("first") else None
     stats["last"] = _clock(summary["last"]) if summary.get("last") else None
     longest = summary.get("longest")
-    stats["longest"] = {"project": longest["project"], "minutes": longest["minutes"]} if longest else None
+    stats["longest"] = {"focus_on": clean(longest["label"]), "kind": longest["kind"], "minutes": longest["minutes"]} \
+        if longest else None
 
     payload = {
         "date": datetime.fromisoformat(day).strftime("%A %Y-%m-%d"),
         "stats": stats,
-        "episodes": eps,
-        "non_work": [{"start": _clock(s), "end": _clock(e), "minutes": m} for s, e, m in nonwork],
+        "entries": items,
+        "also": also,
+        "private": [{"start": _clock(s), "end": _clock(e), "minutes": m} for s, e, m in private],
     }
     check(payload)
     return payload

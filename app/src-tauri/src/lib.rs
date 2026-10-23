@@ -1,4 +1,4 @@
-//! daytrace desktop shell: a menu-bar icon, an always-on-top pill, and a day view window.
+//! daytrace desktop shell: a menu-bar icon, an always-on-top day clock, and a day view window.
 //! All data comes from the `daytrace` CLI (`daytrace day --json`), so stats live in one place.
 
 use std::path::PathBuf;
@@ -104,13 +104,14 @@ fn toggle_pill(app: &AppHandle) {
     }
 }
 
-/// Top-right corner of the primary screen, just under the menu bar.
+/// Bottom-right corner of the primary screen, above the Dock.
 fn place_pill(app: &AppHandle) {
     let Some(window) = app.get_webview_window("pill") else { return };
     let (Ok(Some(monitor)), Ok(size)) = (window.primary_monitor(), window.outer_size()) else { return };
-    let scale = monitor.scale_factor();
-    let x = monitor.size().width as i32 - size.width as i32 - (20.0 * scale) as i32;
-    let y = (40.0 * scale) as i32;
+    let margin = (20.0 * monitor.scale_factor()) as i32;
+    let area = monitor.work_area();
+    let x = area.position.x + area.size.width as i32 - size.width as i32 - margin;
+    let y = area.position.y + area.size.height as i32 - size.height as i32 - margin;
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
@@ -125,7 +126,7 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let open = MenuItem::with_id(app, "open", "Open day view", true, None::<&str>)?;
-            let pill = MenuItem::with_id(app, "pill", "Show / hide pill", true, None::<&str>)?;
+            let pill = MenuItem::with_id(app, "pill", "Show / hide floating clock", true, None::<&str>)?;
             let sync = MenuItem::with_id(app, "sync", "Sync now", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit daytrace", true, Some("cmd+q"))?;
             let separator = PredefinedMenuItem::separator(app)?;

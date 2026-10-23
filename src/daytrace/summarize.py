@@ -1,4 +1,4 @@
-"""Write a day's summary: episodes -> egress gate -> audit -> (dry run | Lumen) -> stored labels and narrative."""
+"""Write a day's summary: episodes -> egress gate -> audit -> (dry run | Lumen) -> stored narrative."""
 
 import os
 from dataclasses import dataclass
@@ -16,16 +16,16 @@ from .store import Store
 class SummaryResult:
     mode: str  # "dry-run" or "sent"
     audit: Path
-    episodes: int
+    entries: int
     narrative: str | None = None
     themes: list[str] | None = None
 
 
-def _nonwork(rows, start: datetime, end: datetime, now: datetime) -> list[tuple[str, str, int]]:
-    """Personal and unclassified time as bare intervals; nothing else about it leaves."""
+def _private(rows, start: datetime, end: datetime, now: datetime) -> list[tuple[str, str, int]]:
+    """Private time as bare intervals; nothing else about it leaves."""
     spans = []
     for r in rows:
-        if r["sensitivity"] != "work" and r["end_at"] and r["category"] != "idle":
+        if r["sensitivity"] == "private" and r["end_at"]:
             s, e = max(parse_iso(r["start_at"]), start), min(parse_iso(r["end_at"]), end, now)
             if e > s:
                 spans.append((s, e))
@@ -37,31 +37,39 @@ def _nonwork(rows, start: datetime, end: datetime, now: datetime) -> list[tuple[
     return out
 
 
+def current(store: Store, day: date, rows) -> dict | None:
+    """The stored story, if still safe to show.
+
+    The story is a snapshot from the last summarize. Rules can change since (a folder made private), so a story
+    that used events which are now private is withheld.
+    """
+    private = {r["id"] for r in rows if r["sensitivity"] == "private"}
+    return None if store.episode_event_ids(day.isoformat()) & private else store.summary(day.isoformat())
+
+
 def summarize(store: Store, rules: Rules, day: date, now: datetime, send: bool = False) -> SummaryResult:
     start, end = day_bounds(day)
     rows = store.events_between(iso(start), iso(end))
     eps = episodes.build(rows, start, end, now)
     store.save_episodes(day.isoformat(), eps)
-    stored = store.episodes(day.isoformat())
+    items, also = episodes.entries(eps)
 
     zero = parse_iso(store.get_meta("day_zero") or iso(start))
     summary = dayjson.build(day, rows, {}, {}, zero, now)["summary"]
-    payload = egress.build_payload(day.isoformat(), stored, summary, _nonwork(rows, start, end, now))
+    payload = egress.build_payload(day.isoformat(), items, also, summary, _private(rows, start, end, now))
     model = os.environ.get("LUMEN_MODEL") or "(unset)"
     body = lumen.request_body(payload, model)
 
     mode = "sent" if send or rules.lumen_mode == "send" else "dry-run"
     audit = egress.write_audit(day.isoformat(), "request" if mode == "sent" else "dry-run", body, now)
     if mode == "dry-run":
-        store.save_summary(day.isoformat(), {"dry_run": True, "audit": str(audit), "episodes": len(stored)},
+        store.save_summary(day.isoformat(), {"dry_run": True, "audit": str(audit), "entries": len(items)},
                            None, "dry-run", now)
-        return SummaryResult(mode, audit, len(stored))
+        return SummaryResult(mode, audit, len(items))
 
     reply = lumen.complete(body)
     egress.write_audit(day.isoformat(), "response", {"reply": reply}, now)
     parsed = lumen.parse(reply)
-    known = {ep["id"] for ep in stored}
-    store.set_labels({i: label for i, label in parsed["labels"].items() if i in known})
-    store.save_summary(day.isoformat(), {"themes": parsed["themes"], "audit": str(audit), "episodes": len(stored)},
+    store.save_summary(day.isoformat(), {"themes": parsed["themes"], "audit": str(audit), "entries": len(items)},
                        parsed["narrative"], model, now)
-    return SummaryResult(mode, audit, len(stored), parsed["narrative"], parsed["themes"])
+    return SummaryResult(mode, audit, len(items), parsed["narrative"], parsed["themes"])

@@ -1,4 +1,4 @@
-"""User-editable rules deciding what counts as work, how apps map to categories, and retention."""
+"""User-editable rules: what stays private, how apps map to categories and folders to projects, retention."""
 
 import os
 import re
@@ -8,28 +8,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_RULES = """\
-# daytrace rules. Personal matches always win over work matches.
-# Anything that matches neither is "unknown": kept local, never sent to an LLM.
+# daytrace rules. Everything is recorded as plain activity except what matches [private].
+
+[private]
+# Matching activity is stored as a bare "private" time block: no app, title, url or project.
+# It never leaves the machine except as a start and end time.
+apps = ["Messages", "WhatsApp", "FaceTime", "Photos", "Spotify", "Music", "TV"]
+titles = ["(?i)\\\\bbank", "(?i)gmail\\\\.com", "(?i)youtube", "(?i)netflix"]
+# Folders whose commits, sessions and windows are private.
+paths = []
+# Chrome/Edge/Brave add " - Google Chrome - <profile>" to some window titles.
+browser_profiles = []
+# Windows matching these are dropped entirely, not even as a time block.
+drop = ["(?i)private browsing", "(?i)incognito", "(?i)inprivate"]
 
 [paths]
-work = ["~/Documents/Projects"]
-personal = ["~/Documents/Projects/personal"]
-
-[apps]
-# Apps whose every window counts as work.
-work = ["Microsoft Outlook", "Microsoft Teams", "zoom.us", "Microsoft Word",
-        "Microsoft Excel", "Microsoft PowerPoint"]
-# Apps that are work only when the window title points at a work repo, path or title pattern.
-context = ["Code", "Cursor", "PyCharm", "iTerm2", "Terminal", "Ghostty", "Warp",
-           "Google Chrome", "Safari", "Firefox", "Arc", "Microsoft Edge", "Claude"]
-personal = ["Messages", "WhatsApp", "Spotify", "Music", "Photos", "FaceTime", "TV"]
+# The top-level folder under a project root names the project. The most specific root wins.
+projects = ["~/Documents/Projects", "~/Documents/Projects/personal"]
 
 [titles]
-# Windows matching these are dropped entirely, never stored.
-drop = ["(?i)private browsing", "(?i)incognito", "(?i)inprivate"]
-personal = ["(?i)\\\\bbank", "(?i)gmail\\\\.com", "(?i)youtube", "(?i)netflix"]
-work = ["(?i)illinois", "(?i)ncsa", "(?i)confluence", "(?i)jira", "(?i)github", "(?i)microsoft azure",
-        "(?i)google cloud console", "(?i)lumen"]
 # Web apps recognized from a browser tab title, checked in order: [pattern, category].
 categories = [
   ["(?i)- Google (Docs|Sheets|Slides|Drive|Forms)\\\\b", "docs"],
@@ -38,21 +35,23 @@ categories = [
   ["(?i)github", "review"],
 ]
 
-[browser_profiles]
-# Chrome/Edge/Brave add " - Google Chrome - <profile>" to some window titles. When present, the profile decides.
-work = []
-personal = []
-
 [categories]
+# "idle" counts as time away from the keyboard: the lock screen is not activity.
+"loginwindow" = "idle"
 "Microsoft Outlook" = "email"
 "Microsoft Teams" = "chat"
+"Slack" = "chat"
 "zoom.us" = "meeting"
 "Microsoft Word" = "docs"
 "Microsoft Excel" = "docs"
 "Microsoft PowerPoint" = "docs"
+"Preview" = "docs"
+"Adobe Acrobat Reader" = "docs"
+"Notes" = "docs"
 "Code" = "code"
 "Cursor" = "code"
 "PyCharm" = "code"
+"Claude" = "code"
 "iTerm2" = "terminal"
 "Terminal" = "terminal"
 "Ghostty" = "terminal"
@@ -62,15 +61,10 @@ personal = []
 "Firefox" = "browse"
 "Arc" = "browse"
 "Microsoft Edge" = "browse"
-"Claude" = "ai"
 
 [projects]
-# Top-level folder under a work path -> project key. Unlisted folders use their lowercased name.
+# Top-level folder under a project root -> project key. Unlisted folders use their lowercased name.
 "INCORE-2.0" = "incore"
-
-[github]
-# Repos owned by these GitHub users or orgs are personal, wherever they're cloned. Everything else is work.
-personal_owners = ["longshuicy"]
 
 [git]
 roots = ["~/Documents/Projects"]
@@ -80,7 +74,7 @@ author_emails = []
 
 [lumen]
 # "dry-run": build the request and save it under ~/.daytrace/audit/, send nothing.
-# "send": send work-only summaries to Lumen. `daytrace summarize --send` sends once regardless.
+# "send": send summaries to Lumen. `daytrace summarize --send` sends once regardless.
 mode = "dry-run"
 
 [retention]
@@ -112,53 +106,44 @@ def _within(path: Path, roots: list[Path]) -> Path | None:
 
 @dataclass
 class Rules:
-    work_paths: list[Path]
-    personal_paths: list[Path]
-    work_apps: set[str]
-    context_apps: set[str]
-    personal_apps: set[str]
+    project_roots: list[Path]
+    private_apps: set[str]
+    private_titles: list[re.Pattern]
+    private_paths: list[Path]
+    private_profiles: set[str]
     drop_titles: list[re.Pattern]
-    personal_titles: list[re.Pattern]
-    work_titles: list[re.Pattern]
     categories: dict[str, str]
     projects: dict[str, str]
     git_roots: list[Path]
     git_max_depth: int
     git_authors: list[str]
     activitywatch_raw_days: int
-    personal_owners: set[str] = field(default_factory=set)
     lumen_mode: str = "dry-run"
     title_categories: list[tuple[re.Pattern, str]] = field(default_factory=list)
-    work_profiles: set[str] = field(default_factory=set)
-    personal_profiles: set[str] = field(default_factory=set)
     _remotes: dict[Path, str | None] = field(default_factory=dict, repr=False)
     _repos: dict[str, Path] | None = field(default=None, repr=False)
 
     @classmethod
     def from_text(cls, text: str) -> "Rules":
         d = tomllib.loads(text)
-        paths, apps, titles = d.get("paths", {}), d.get("apps", {}), d.get("titles", {})
-        git, retention, github = d.get("git", {}), d.get("retention", {}), d.get("github", {})
+        private, paths, titles = d.get("private", {}), d.get("paths", {}), d.get("titles", {})
+        git, retention = d.get("git", {}), d.get("retention", {})
         return cls(
-            work_paths=_paths(paths.get("work", [])),
-            personal_paths=_paths(paths.get("personal", [])),
-            work_apps=set(apps.get("work", [])),
-            context_apps=set(apps.get("context", [])),
-            personal_apps=set(apps.get("personal", [])),
-            drop_titles=_patterns(titles.get("drop", [])),
-            personal_titles=_patterns(titles.get("personal", [])),
-            work_titles=_patterns(titles.get("work", [])),
+            # Most specific root first, so ~/Projects/personal/x is project "x", not "personal".
+            project_roots=sorted(_paths(paths.get("projects", [])), key=lambda p: -len(p.parts)),
+            private_apps=set(private.get("apps", [])),
+            private_titles=_patterns(private.get("titles", [])),
+            private_paths=_paths(private.get("paths", [])),
+            private_profiles=set(private.get("browser_profiles", [])),
+            drop_titles=_patterns(private.get("drop", [])),
             categories=d.get("categories", {}),
             projects=d.get("projects", {}),
             git_roots=_paths(git.get("roots", [])),
             git_max_depth=git.get("max_depth", 3),
             git_authors=[e.lower() for e in git.get("author_emails", [])],
             activitywatch_raw_days=retention.get("activitywatch_raw_days", 7),
-            personal_owners={o.lower() for o in github.get("personal_owners", [])},
             lumen_mode=d.get("lumen", {}).get("mode", "dry-run"),
             title_categories=[(re.compile(p), c) for p, c in titles.get("categories", [])],
-            work_profiles=set(d.get("browser_profiles", {}).get("work", [])),
-            personal_profiles=set(d.get("browser_profiles", {}).get("personal", [])),
         )
 
     @classmethod
@@ -172,43 +157,29 @@ class Rules:
     def is_dropped(self, title: str | None) -> bool:
         return self.matches(self.drop_titles, title)
 
-    def classify_path(self, path: Path) -> tuple[str, str | None] | None:
-        """('personal', None) or ('work', project) for a path, or None if neither applies."""
+    def is_private_path(self, path: Path) -> bool:
+        return _within(path.expanduser().resolve(), self.private_paths) is not None
+
+    def project_for_path(self, path: Path) -> str | None:
+        """The project a path belongs to: its top-level folder under the most specific project root."""
         path = path.expanduser().resolve()
-        if _within(path, self.personal_paths):
-            return ("personal", None)
-        root = _within(path, self.work_paths)
+        root = _within(path, self.project_roots)
         if root is None:
             return None
-        if self.owner_of(path, root) in self.personal_owners:
-            return ("personal", None)
         rel = path.relative_to(root).parts
-        if not rel:
-            return ("work", None)
-        return ("work", self.projects.get(rel[0], rel[0].lower()))
+        return self.projects.get(rel[0], rel[0].lower()) if rel else None
 
-    def classify_owner(self, owner: str, repo: str) -> tuple[str, str | None]:
-        """Classify a GitHub repo by owner; the project comes from its local clone when there is one."""
-        if owner.lower() in self.personal_owners:
-            return ("personal", None)
+    def local_clone(self, owner: str, repo: str) -> Path | None:
+        """The local clone of a GitHub repo: matched by origin remote, else by folder name."""
         full = f"{owner}/{repo}".lower()
         local = next((p for p in self.repos().values() if self.remote_of(p) == full), None)
-        local = local or self.repos().get(repo.lower())
-        if local:
-            result = self.classify_path(local)
-            if result and result[0] == "work":
-                return result
-        return ("work", self.projects.get(owner, owner.lower()))
+        return local or self.repos().get(repo.lower())
 
-    def owner_of(self, path: Path, stop: Path) -> str | None:
-        """GitHub owner of the repo containing path, from its origin remote."""
-        for candidate in (path, *path.parents):
-            if (candidate / ".git").exists():
-                remote = self.remote_of(candidate)
-                return remote.split("/")[0] if remote else None
-            if candidate == stop:
-                return None
-        return None
+    def project_for_repo(self, owner: str, repo: str) -> str:
+        """A GitHub repo's project: from its local clone when there is one, else the owner."""
+        local = self.local_clone(owner, repo)
+        project = self.project_for_path(local) if local else None
+        return project or self.projects.get(owner, owner.lower())
 
     def remote_of(self, repo: Path) -> str | None:
         """'owner/name' (lowercased) of a local repo's GitHub origin, or None."""
@@ -227,15 +198,9 @@ class Rules:
                     return category
         return self.categories.get(app or "", "other")
 
-    def profile_sensitivity(self, title: str | None) -> str | None:
+    def browser_profile(self, title: str | None) -> str | None:
         m = _PROFILE.search(title or "")
-        if not m:
-            return None
-        if m.group(1) in self.personal_profiles:
-            return "personal"
-        if m.group(1) in self.work_profiles:
-            return "work"
-        return None
+        return m.group(1) if m else None
 
     def repos(self) -> dict[str, Path]:
         """Git repositories under the git roots, keyed by lowercased folder name."""

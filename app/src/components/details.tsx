@@ -4,7 +4,7 @@ import type { Block, Point } from "../types";
 const EVIDENCE: Record<string, string> = {
   observed: "observed on this Mac",
   recorded: "recorded by the source",
-  scheduled: "scheduled, not necessarily attended",
+  scheduled: "from your calendar",
   inferred: "inferred",
 };
 
@@ -24,7 +24,7 @@ export function BlockDetail({ b }: { b: Block }) {
       ))}
       <div className="tip-foot">
         {SOURCE_LABEL[b.source] ?? b.source} · {EVIDENCE[b.evidence] ?? b.evidence}
-        {b.sensitivity !== "work" && " · details not kept"}
+        {b.sensitivity === "private" && " · details not kept"}
       </div>
     </>
   );
@@ -43,7 +43,7 @@ export function PointDetail({ p }: { p: Point }) {
       <div className="tip-foot">
         {SOURCE_LABEL[p.source] ?? p.source}
         {p.url ? " · click to open" : ""}
-        {p.sensitivity !== "work" && " · details not kept"}
+        {p.sensitivity === "private" && " · details not kept"}
       </div>
     </>
   );

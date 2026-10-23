@@ -63,7 +63,7 @@ def _span(session_id: str, items: list[tuple]) -> RawEvent:
     branch = next((m[3] for m in reversed(items) if m[3]), None)
     return RawEvent(
         "claude_code", f"{session_id}:{iso(start)}", "span", "recorded",
-        start, max(end, start + MIN_SPAN), category="ai",
+        start, max(end, start + MIN_SPAN), category="code",
         path=cwd[0][0] if cwd else None,
         attrs={"prompts": len({m[2] for m in items if m[2]}), "branch": branch},
     )

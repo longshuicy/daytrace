@@ -10,20 +10,20 @@ from .adapters import NotConfigured
 SYSTEM_PROMPT = """\
 You turn structured traces of one person's workday into a short, honest diary entry.
 
-You get JSON with day "stats" and "episodes": chunks of work with local times, a project, minutes per
-activity, counts (commits, PRs, emails...), a few titles and git branch names.
+You get JSON with day "stats" and "entries": one per project (or for meetings, or a kind of activity without a
+project), each with its local time ranges, minutes per activity, counts (commits, PRs, emails...), up to three
+titles, site names with minutes, and git branch names. "also" counts short bits too small to list.
 
 Write in the second person ("You ..."), plain and warm. No productivity judgement, no advice, no scores.
 Rules:
 - Use only what is in the data. Never invent tasks, people, decisions or outcomes beyond the titles.
-- Meetings come from a calendar: they were scheduled. Say "you had X on your calendar", not what happened in it.
+- Meetings come from the calendar; assume they were attended. Name them, but not what was said or decided.
 - Minutes are spans of activity, not effort. Don't call anything hard, productive, or a struggle.
-- "ai" means working with an AI coding assistant; "commit"/"pr"/"push" are git and GitHub actions.
-- "non_work" blocks are private. At most say there was personal time; never guess what it was.
+- "commit"/"pr"/"push" are git and GitHub actions.
+- "private" blocks are private. At most say there was private time; never guess what it was.
 
 Reply with only a JSON object, no prose around it:
-{"episodes": [{"id": "<episode id>", "label": "<one sentence, at most 14 words>"}],
- "narrative": "<3 to 5 sentences, the shape of the day in time order>",
+{"narrative": "<3 to 5 sentences, the shape of the day in time order>",
  "themes": ["<2 to 4 short noun phrases>"]}
 """
 
@@ -66,7 +66,6 @@ def parse(text: str) -> dict:
         raise ValueError("Lumen reply had no JSON object")
     data = json.loads(text[start:end + 1])
     return {
-        "labels": {e["id"]: str(e["label"]).strip() for e in data.get("episodes", []) if e.get("id") and e.get("label")},
         "narrative": str(data.get("narrative", "")).strip(),
         "themes": [str(t).strip() for t in data.get("themes", []) if str(t).strip()][:4],
     }

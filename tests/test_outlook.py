@@ -29,7 +29,7 @@ def test_calendar_event_mapping_and_filters(rules):
     assert raw.attrs == {"attendees": 3, "response": "accepted", "organizer_domain": "illinois.edu",
                          "online": "teamsForBusiness"}
     assert "someone@" not in repr(raw)
-    assert transform(raw, rules).sensitivity == "work"
+    assert transform(raw, rules).sensitivity == "normal"
     for skipped in (dict(isCancelled=True), dict(isAllDay=True), dict(showAs="free"),
                     dict(responseStatus={"response": "declined"})):
         assert calendar_raw(_event(**skipped)) is None
@@ -82,6 +82,6 @@ def test_day_counts_only_the_past_and_calendar_meetings(tmp_path, rules):
     start, end = day_bounds(date(2026, 10, 22))
     d = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO, now)
     assert d["summary"]["counts"]["meetings"] == 1 and d["summary"]["counts"]["meeting_min"] == 30
-    assert d["summary"]["work_min"] == 30
+    assert d["summary"]["active_min"] == 30
     assert len([b for b in d["blocks"] if b["category"] == "meeting"]) == 2  # upcoming one is still drawn
-    assert d["line"].startswith("30m work · 1 meeting")
+    assert d["line"].startswith("30m active · 1 meeting")

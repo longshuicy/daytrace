@@ -1,8 +1,8 @@
 // Shape of `daytrace day --json`. Times are local ISO strings with offset.
 
-export type GroupKey = "coord" | "code" | "ai" | "review" | "writing" | "browse" | "other" | "nonwork" | "unknown";
+export type GroupKey = "coord" | "code" | "review" | "writing" | "browse" | "other" | "private";
 export type Evidence = "observed" | "scheduled" | "recorded" | "inferred";
-export type Sensitivity = "work" | "personal" | "unknown";
+export type Sensitivity = "normal" | "private";
 
 export interface Block {
   start: string;
@@ -49,13 +49,12 @@ export interface ProjectRow {
 export interface Summary {
   first: string | null;
   last: string | null;
-  work_min: number;
-  nonwork_min: number;
-  unknown_min: number;
+  active_min: number;
+  private_min: number;
   idle_min: number;
   groups: Partial<Record<GroupKey, number>>;
   projects: ProjectRow[];
-  longest: { project: string; minutes: number; start: string; end: string } | null;
+  longest: Focus | null;
   counts: {
     commits: number; prs: number; reviews: number; pushes: number; wiki: number; issues: number;
     meetings: number; meeting_min: number; emails_sent: number; emails_received: number;
@@ -77,7 +76,8 @@ export interface Day {
   points: Point[];
   idle: { start: string; end: string }[];
   story: Story | null;
-  episodes: Episode[];
+  sites: Site[];
+  highlights: Highlights;
 }
 
 export interface Story {
@@ -87,16 +87,27 @@ export interface Story {
   generated_at: string;
   dry_run: boolean;
   audit: string | null;
+  entries: number;  // projects and activities in the request
 }
 
-export interface Episode {
-  id: string;
+export interface Site {
+  site: string | null;  // null: pages whose title names no site, and sites under two minutes
+  minutes: number;
+}
+
+/** What the day produced, built locally from stored traces. */
+export interface Highlights {
+  shipped: { title: string; url: string | null; project: string | null; category: string }[];
+  biggest: { title: string; project: string | null; files: number; insertions: number; deletions: number } | null;
+  working_on: { project: string | null; branch: string; minutes: number }[];
+  focus: Focus | null;
+}
+
+/** Longest stretch without interruptions; label is a project, document title, site or app. */
+export interface Focus {
+  label: string;
+  kind: "project" | "document" | "site" | "app";
+  minutes: number;
   start: string;
   end: string;
-  kind: "meeting" | "project" | "activity";
-  project: string | null;
-  group: GroupKey;
-  minutes: number;
-  label: string | null;
-  counts: Record<string, number>;
 }

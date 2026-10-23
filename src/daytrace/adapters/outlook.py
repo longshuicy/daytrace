@@ -1,4 +1,4 @@
-"""Outlook via Microsoft Graph: calendar events (scheduled, not attended) and email metadata (never bodies)."""
+"""Outlook via Microsoft Graph: calendar events (taken as attended) and email metadata (never bodies)."""
 
 from datetime import datetime, timedelta
 from typing import Iterable
@@ -40,7 +40,6 @@ def calendar_raw(e: dict) -> RawEvent | None:
     return RawEvent(
         "outlook_calendar", e["id"], "plan", "scheduled", start, end,
         category="meeting", title=e.get("subject") or "(no subject)", url=e.get("webLink"),
-        always_work=True,
         attrs={
             "attendees": len(e.get("attendees") or []),
             "response": response,
@@ -97,5 +96,5 @@ def mail_raw(m: dict, sent: bool) -> RawEvent:
     return RawEvent(
         "outlook_mail", m["id"], "point", "recorded", at, category=category,
         title=m.get("subject") or "(no subject)", url=m.get("webLink") if sent else None,
-        always_work=True, attrs=attrs,
+        attrs=attrs,
     )

@@ -19,9 +19,7 @@ class GitHub:
     name = "github"
     overlap = timedelta(minutes=30)  # the feed can lag a few minutes behind
 
-    def __init__(self, personal_owners: set[str] = frozenset(), token: str | None = None,
-                 timeout: float = 15.0):
-        self.personal_owners = personal_owners
+    def __init__(self, token: str | None = None, timeout: float = 15.0):
         self._token = token
         self.timeout = timeout
         self._titles: dict[str, str | None] = {}
@@ -57,9 +55,9 @@ class GitHub:
 
 
     def _with_title(self, raw: RawEvent) -> RawEvent:
-        """The feed no longer includes PR/issue titles; look each one up once. Skipped for personal repos."""
+        """The feed no longer includes PR/issue titles; look each one up once."""
         number = raw.attrs.get("number")
-        if not number or raw.attrs.get("has_title") or raw.owner.lower() in self.personal_owners:
+        if not number or raw.attrs.get("has_title"):
             return raw
         key = f"{raw.attrs['repo']}#{number}"
         if key not in self._titles:

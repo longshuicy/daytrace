@@ -16,7 +16,7 @@ Milestones 1–2 done; milestone 3 (online sources) and 6 (desktop app) in progr
 | Claude Code | active session spans per project (never prompt content) |
 | GitHub | PRs opened/merged, reviews, issues, comments, pushes (uses your `gh` sign-in) |
 | Confluence | pages and blog posts you created or edited, your comments (needs a token) |
-| Outlook calendar | meetings: subject, time, attendee count, your response (scheduled, not proof you attended) |
+| Outlook calendar | meetings: subject, time, attendee count, your response (meetings are taken as attended) |
 | Outlook mail | sent and received: subject, time, the other side's *domains*. Never bodies or addresses |
 
 To connect the NCSA wiki: wiki → your profile → **Personal Access Tokens** → create one, then add it to
@@ -57,24 +57,26 @@ OpenAI-compatible endpoint: `LUMEN_BASE_URL` ending in `/v1`, `LUMEN_MODEL`, `LU
 episode labels, a short paragraph and themes. It's a dry run unless you pass `--send` or set
 `mode = "send"` under `[lumen]` in `rules.toml`.
 
-What leaves the machine: work episodes (local times, project, minutes per activity, counts, up to six
-scrubbed titles, branch names) and day counts. Non-work time leaves only as bare time ranges. Every request
+What leaves the machine: episodes (local times, project, minutes per activity, counts, up to six
+scrubbed titles, branch names) and day counts. Private time leaves only as bare time ranges. Every request
 (and reply) is saved under `~/.daytrace/audit/<date>/` before anything is sent.
 
 ## Desktop app
 
-`app/` is a Tauri app: a menu-bar icon, a small always-on-top pill with today's strip and one summary line,
-and a day view (timeline, day clock, projects, traces, source status). It reads data through
+`app/` is a Tauri app: a menu-bar icon, a small always-on-top day clock in the bottom-right corner, and a day
+view (Lumen's summary, a timeline you can switch to a day clock or a sortable table, projects, top sites, and an
+alert when a source fails to sync). It reads data through
 `daytrace day --json`, so it needs the CLI installed (`~/.local/bin/daytrace`, or set `DAYTRACE_BIN`).
 
 ```bash
 cd app
 npm install
 npx tauri build          # -> src-tauri/target/release/bundle/macos/daytrace.app
+./rebuild.sh             # build, replace /Applications/daytrace.app and relaunch
 npx tauri dev            # run with hot reload
 ```
 
-Drag the pill to move it, click it to open the day view. Closing windows hides them; quit from the menu-bar icon.
+Drag the floating clock to move it, click it to open the day view. Closing windows hides them; quit from the menu-bar icon.
 
 UI-only preview in a browser, with no Rust build: `daytrace day --json > app/dev/dev-day.json`, then
 `npm --prefix app run dev` and open http://localhost:1420 (add `?window=pill` for the pill). `app/dev/` is
@@ -83,10 +85,12 @@ gitignored.
 ## Privacy
 
 - Everything stays in `~/.daytrace/`.
-- `~/.daytrace/rules.toml` decides what counts as work. Personal matches win; anything unclear is `unknown`.
-  Repos owned by `longshuicy` on GitHub are personal wherever they're cloned.
-- Nothing is sent anywhere except read-only requests to the services themselves (GitHub, the wiki).
-- Non-work events keep only a category and timing: no titles, URLs or project names.
+- There is no work/personal split. Everything is recorded as plain activity except what matches `[private]` in
+  `~/.daytrace/rules.toml` (apps, title patterns, folders, browser profiles).
+- Private events keep only their timing: no app, title, URL or project. They leave the machine only as bare
+  time ranges.
+- Nothing is sent anywhere except read-only requests to the services themselves (GitHub, the wiki), and Lumen
+  when you turn sending on.
 - Private/incognito windows are never stored.
 - Raw ActivityWatch events are deleted from ActivityWatch 7 days after daytrace ingests them.
 

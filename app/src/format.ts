@@ -33,17 +33,15 @@ export function ago(iso: string, now = new Date()): string {
 export const GROUP_LABEL: Record<GroupKey, string> = {
   coord: "Meetings & mail",
   code: "Coding",
-  ai: "AI pairing",
   review: "Review & issues",
   writing: "Docs & wiki",
   browse: "Browsing",
-  other: "Other work",
-  nonwork: "Non-work",
-  unknown: "Unclassified",
+  other: "Other",
+  private: "Private",
 };
 
-/** Lane order, top to bottom. Work groups follow the palette order. */
-export const LANES: GroupKey[] = ["coord", "code", "ai", "review", "writing", "browse", "other", "unknown", "nonwork"];
+/** Lane order, top to bottom, following the palette order. */
+export const LANES: GroupKey[] = ["coord", "code", "review", "writing", "browse", "other", "private"];
 
 export const colorVar = (g: GroupKey) => `var(--g-${g})`;
 
@@ -58,6 +56,7 @@ export const SOURCE_LABEL: Record<string, string> = {
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
+  private: "Private",
   meeting: "Meeting",
   email: "Email sent",
   commit: "Commit",
@@ -69,3 +68,16 @@ export const CATEGORY_LABEL: Record<string, string> = {
   repo: "Branch / repo",
   wiki: "Wiki",
 };
+
+const COUNT_WORD: Record<string, [string, string]> = {
+  commit: ["commit", "commits"], pr: ["PR", "PRs"], push: ["push", "pushes"], review: ["review", "reviews"],
+  issue: ["issue", "issues"], release: ["release", "releases"], wiki: ["wiki edit", "wiki edits"],
+  email: ["email sent", "emails sent"],
+};
+
+/** "3 commits · 1 PR · 1 push" */
+export function countText(counts: Record<string, number>): string {
+  return Object.entries(counts)
+    .map(([k, n]) => `${n} ${(COUNT_WORD[k] ?? [k, k])[n === 1 ? 0 : 1]}`)
+    .join(" · ");
+}

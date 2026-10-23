@@ -70,7 +70,6 @@ def to_raw(item: dict, me: dict, base_url: str) -> RawEvent | None:
     return RawEvent(
         "confluence", f"{item['id']}:v{number}", "point", "recorded", parse_iso(version["when"]),
         category="wiki", title=title, url=base_url + links["webui"] if "webui" in links else None,
-        always_work=True,
         attrs={"space": item.get("space", {}).get("key"), "type": kind, "version": number},
     )
 

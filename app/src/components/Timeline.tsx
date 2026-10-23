@@ -1,8 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { scaleTime, timeHour } from "d3";
 import { useLayoutEffect, useRef, useState } from "react";
-import { GROUP_LABEL, LANES, colorVar } from "../format";
-import type { Day, GroupKey } from "../types";
+import { GROUP_LABEL, LANES, SOURCE_LABEL, colorVar } from "../format";
+import type { Block, Day, GroupKey } from "../types";
 import { BlockDetail, PointDetail } from "./details";
 import type { useTooltip } from "./Tooltip";
 
@@ -10,6 +10,48 @@ const LABEL_W = 128;
 const LANE_H = 26;
 const BAR_H = 12;
 const AXIS_H = 22;
+const BRIDGE_MIN = 3;  // bars in one lane closer than this (or 4px) are drawn as one stretch
+const DONE = "done" as const;
+
+type Row = GroupKey | typeof DONE;
+
+/** Join a lane's bars into stretches, bridging short gaps. Calendar meetings stay one bar each, with their titles. */
+function stretches(blocks: Block[], bridgeMs: number): Block[] {
+  const out: Block[] = [];
+  const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
+  let run: Block[] = [];
+  let runEnd = 0;
+  const flush = () => {
+    if (!run.length) return;
+    // Minutes are time actually covered, not the bridged gaps.
+    let covered = 0, edge = 0;
+    for (const b of run) {
+      const s = Math.max(+new Date(b.start), edge), e = +new Date(b.end);
+      if (e > s) covered += e - s;
+      edge = Math.max(edge, e);
+    }
+    const unique = <T,>(xs: T[]) => [...new Set(xs)];
+    const projects = unique(run.map((b) => b.project).filter(Boolean));
+    const sources = unique(run.map((b) => b.source));
+    out.push({
+      ...run[0],
+      end: new Date(runEnd).toISOString(),
+      minutes: Math.round(covered / 6000) / 10,
+      project: projects.join(", ") || null,
+      source: sources.length === 1 ? sources[0] : sources.map((s) => SOURCE_LABEL[s] ?? s).join(", "),
+      titles: unique(run.flatMap((b) => b.titles)).slice(0, 3),
+    });
+    run = [];
+  };
+  for (const b of sorted) {
+    if (b.evidence === "scheduled") { out.push(b); continue; }
+    if (run.length && +new Date(b.start) - runEnd > bridgeMs) flush();
+    run.push(b);
+    runEnd = Math.max(run.length > 1 ? runEnd : 0, +new Date(b.end));
+  }
+  flush();
+  return out;
+}
 
 interface Props {
   day: Day;
@@ -17,7 +59,8 @@ interface Props {
   tooltip: ReturnType<typeof useTooltip>;
 }
 
-/** One lane per activity group; spans as bars, single traces as dots. Lanes overlap in time by design. */
+/** A "Done" row of single traces (commits, PRs, mail), then one lane per activity group with spans joined into
+ *  stretches. Lanes can overlap in time (browsing during a meeting). */
 export default function Timeline({ day, fullDay, tooltip }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -29,9 +72,11 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
     return () => ro.disconnect();
   }, []);
 
-  const lanes = LANES.filter(
-    (g) => day.blocks.some((b) => b.group === g) || day.points.some((p) => p.group === g),
-  );
+  const done = day.points.filter((p) => p.sensitivity !== "private");
+  const lanes: Row[] = [
+    ...(done.length ? [DONE] : []),
+    ...LANES.filter((g) => day.blocks.some((b) => b.group === g)),
+  ];
   const dayStart = new Date(day.start);
   const dayEnd = new Date(day.end);
   const now = new Date(day.now);
@@ -52,7 +97,10 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
   const hours = (to.getTime() - from.getTime()) / 3_600_000;
   const ticks = x.ticks(timeHour.every(hours > 14 || plotW < 640 ? 2 : 1)!);
   const height = AXIS_H + lanes.length * LANE_H + 4;
-  const laneY = (g: GroupKey) => AXIS_H + lanes.indexOf(g) * LANE_H;
+  const laneY = (g: Row) => AXIS_H + lanes.indexOf(g) * LANE_H;
+  const bridgeMs = Math.max(BRIDGE_MIN * 60_000, x.invert(4).getTime() - x.invert(0).getTime());
+  const bars = LANES.flatMap((g) => stretches(day.blocks.filter((b) => b.group === g), bridgeMs));
+  const faded = (g: Row) => g === "other" || g === "private";
 
   return (
     <div ref={ref} className="timeline">
@@ -61,9 +109,11 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
       ) : (
         <svg width={width} height={height} role="img" aria-label="Timeline of the day by activity">
           {lanes.map((g) => (
-            <g key={g} transform={`translate(0, ${laneY(g)})`}>
-              <rect x={0} y={LANE_H / 2 - 4} width={8} height={8} rx={2} fill={colorVar(g)} />
-              <text x={14} y={LANE_H / 2 + 4} className="lane-label">{GROUP_LABEL[g]}</text>
+            <g key={g} transform={`translate(0, ${laneY(g)})`} opacity={faded(g) ? 0.6 : 1}>
+              {g === DONE
+                ? <circle cx={4} cy={LANE_H / 2} r={4} fill="var(--ink-2)" />
+                : <rect x={0} y={LANE_H / 2 - 4} width={8} height={8} rx={2} fill={colorVar(g)} />}
+              <text x={14} y={LANE_H / 2 + 4} className="lane-label">{g === DONE ? "Done" : GROUP_LABEL[g]}</text>
             </g>
           ))}
           <g transform={`translate(${LABEL_W}, 0)`}>
@@ -81,17 +131,16 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
                 </text>
               </g>
             ))}
-            {day.blocks.map((b, i) => {
-              if (!lanes.includes(b.group)) return null;
+            {done.length > 0 && (
+              <line x1={0} x2={plotW} y1={laneY(DONE) + LANE_H} y2={laneY(DONE) + LANE_H} stroke="var(--grid)" />
+            )}
+            {bars.map((b, i) => {
               const x0 = x(new Date(b.start));
               const w = Math.max(2, x(new Date(b.end)) - x0);
               const y = laneY(b.group) + (LANE_H - BAR_H) / 2;
-              const outline = b.evidence === "scheduled";
-              // Scheduled (calendar) time: a light tint plus outline, so it reads as "planned", not "observed".
               return (
                 <rect key={i} x={x0} y={y} width={w} height={BAR_H} rx={Math.min(4, w / 2)}
-                  fill={colorVar(b.group)} fillOpacity={outline ? 0.22 : 1}
-                  stroke={outline ? colorVar(b.group) : "none"} strokeWidth={outline ? 1.5 : 0}
+                  fill={colorVar(b.group)} fillOpacity={faded(b.group) ? 0.4 : 1}
                   onMouseMove={(e) => tooltip.show(e, <BlockDetail b={b} />)} onMouseLeave={tooltip.hide} />
               );
             })}
@@ -101,10 +150,9 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
                 <text y={AXIS_H - 9} textAnchor="middle" className="now-label">now</text>
               </g>
             )}
-            {day.points.map((p, i) => {
-              if (!lanes.includes(p.group)) return null;
+            {done.map((p, i) => {
               const cx = x(new Date(p.at));
-              const cy = laneY(p.group) + LANE_H / 2;
+              const cy = laneY(DONE) + LANE_H / 2;
               return (
                 <g key={i} className={p.url ? "clickable" : undefined}
                   onMouseMove={(e) => tooltip.show(e, <PointDetail p={p} />)} onMouseLeave={tooltip.hide}

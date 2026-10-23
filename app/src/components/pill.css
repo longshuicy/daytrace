@@ -1,26 +1,20 @@
 /* The window itself is a rounded macOS HUD material (windowEffects); this only lays out content. */
 .pill {
+  position: relative;
   height: 100vh;
-  padding: 10px 14px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  place-items: center;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
   color: var(--pill-ink);
 }
-.pill-ribbon { display: block; overflow: visible; }
-.pill-line {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 12px;
-  line-height: 16px;
-  white-space: nowrap;
+.pill svg { display: block; }
+.pill .clock-value.compact { font-size: 12px; font-weight: 600; fill: var(--pill-ink); }
+.pill-empty { font-size: 14px; }
+.pill-warn {
+  position: absolute; top: 8px; right: 8px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--critical);
 }
-.pill-text { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.pill-meta { color: var(--pill-ink-2); font-size: 11px; display: flex; gap: 8px; flex-shrink: 0; }
-.pill-warn { color: var(--critical); font-weight: 600; }
 .muted { color: var(--pill-ink-2); }

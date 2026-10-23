@@ -16,13 +16,11 @@
 
   --g-coord: #2a78d6;
   --g-code: #eb6834;
-  --g-ai: #1baf7a;
   --g-review: #eda100;
   --g-writing: #e87ba4;
   --g-browse: #008300;
   --g-other: #898781;
-  --g-unknown: #c3c2b7;
-  --g-nonwork: #d8d7d0;
+  --g-private: #b5b3ab;
 
   --pill-ink: #0b0b0b;
   --pill-ink-2: #3c3b38;
@@ -49,13 +47,11 @@
 
     --g-coord: #3987e5;
     --g-code: #d95926;
-    --g-ai: #199e70;
     --g-review: #c98500;
     --g-writing: #d55181;
     --g-browse: #008300;
     --g-other: #898781;
-    --g-unknown: #4a4a46;
-    --g-nonwork: #383835;
+    --g-private: #5a5955;
 
     --pill-ink: #f0efec;
     --pill-ink-2: #c3c2b7;

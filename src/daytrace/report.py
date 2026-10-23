@@ -41,7 +41,7 @@ def summarize(rows: list[sqlite3.Row], start: datetime, end: datetime) -> dict:
 
     by_category, by_sensitivity, by_project = defaultdict(list), defaultdict(list), defaultdict(list)
     for r, s, e in spans:
-        by_category[r["category"]].append((s, e))
+        by_category[_shown(r["category"])].append((s, e))
         if r["category"] != "idle":
             by_sensitivity[r["sensitivity"]].append((s, e))
             if r["project"]:
@@ -49,10 +49,11 @@ def summarize(rows: list[sqlite3.Row], start: datetime, end: datetime) -> dict:
 
     active = [(s, e) for r, s, e in spans if r["category"] != "idle"]
     active += [(parse_iso(p["start_at"]),) * 2 for p in points]
-    commits = Counter(p["project"] or "(non-work)" for p in points if p["category"] == "commit")
+    commits = Counter(p["project"] or "(no project)" for p in points if p["category"] == "commit")
     return {
         "categories": {k: total(v) for k, v in by_category.items()},
         "sensitivity": {k: total(v) for k, v in by_sensitivity.items()},
+        "active": total([(s, e) for r, s, e in spans if r["category"] != "idle"]),
         "projects": {k: total(v) for k, v in by_project.items()},
         "commits": commits,
         "first": min((s for s, _ in active), default=None),
@@ -66,22 +67,27 @@ def _timeline(spans: list, points: list) -> list[tuple[datetime, datetime | None
     for r, s, e in spans:
         if r["category"] == "idle":
             continue
-        groups[(r["source"], r["category"], r["project"], r["sensitivity"])].append((s, e))
+        groups[(r["source"], _shown(r["category"]), r["project"], r["sensitivity"])].append((s, e))
     lines = []
     for (source, category, project, sensitivity), intervals in groups.items():
         for s, e in merge(intervals, gap=timedelta(minutes=2)):
             if e - s >= timedelta(minutes=2):
                 lines.append((s, e, _label(source, category, project, sensitivity)))
     for p in points:
-        label = _label(p["source"], p["category"], p["project"], p["sensitivity"])
+        label = _label(p["source"], _shown(p["category"]), p["project"], p["sensitivity"])
         if p["title"]:
             label += f'  "{p["title"]}"'
         lines.append((parse_iso(p["start_at"]), None, label))
     return sorted(lines, key=lambda line: line[0])
 
 
+def _shown(category: str) -> str:
+    """Private time is shown as plain "other"."""
+    return "other" if category == "private" else category
+
+
 def _label(source: str, category: str, project: str | None, sensitivity: str) -> str:
-    where = project or ("non-work" if sensitivity == "personal" else sensitivity)
+    where = project or "-"
     return f"{category:<9} {where:<14} {source}"
 
 
@@ -119,8 +125,7 @@ def render(day: date, rows: list[sqlite3.Row], statuses: dict[str, str], day_zer
         bar = "█" * max(1, round(20 * td / longest))
         out.append(f"  {cat:<10} {fmt(td):>8}  {bar}")
 
-    sens = s["sensitivity"]
-    out.append("\n" + " · ".join(f"{k} {fmt(sens[k])}" for k in ("work", "personal", "unknown") if k in sens))
+    out.append(f"\nactive {fmt(s['active'])}")
 
     if s["projects"] or s["commits"]:
         out.append("\nProjects")

@@ -20,26 +20,22 @@ def _remote(repo, url):
     subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", url], check=True)
 
 
-def test_personal_owner_wins_anywhere_under_work_root(rules, projects):
+def test_repo_under_project_root_is_named_by_folder(rules, projects):
     site = projects / "longshuicy.github.io"
     (site / ".git").mkdir(parents=True)
-    _remote(site, "https://github.com/longshuicy/longshuicy.github.io.git")
-    _remote(projects / "PDG", "git@github.com:ncsa/PDG.git")
     rules._repos = None
 
     commit = RawEvent("git", "a", "point", "recorded", T0, path=str(site))
-    assert classify(commit, rules) == ("personal", None)
+    assert classify(commit, rules) == ("normal", "longshuicy.github.io")
     session = RawEvent("claude_code", "b", "span", "recorded", T0, path=str(site / "src"))
-    assert classify(session, rules) == ("personal", None)
-    assert classify(RawEvent("git", "c", "point", "recorded", T0, path=str(projects / "PDG")), rules) == \
-        ("work", "pdg")
+    assert classify(session, rules) == ("normal", "longshuicy.github.io")
 
 
-def test_github_owner_rule_and_local_project(rules):
+def test_github_project_from_clone_or_owner(rules):
     ev = lambda owner, repo: RawEvent("github", "1", "point", "recorded", T0, owner=owner, repo=repo)
-    assert classify(ev("LongShuicy", "notes"), rules) == ("personal", None)
-    assert classify(ev("IN-CORE", "incore-helm"), rules) == ("work", "incore")  # via local clone
-    assert classify(ev("ncsa", "unknown-repo"), rules) == ("work", "ncsa")
+    assert classify(ev("LongShuicy", "notes"), rules) == ("normal", "longshuicy")
+    assert classify(ev("IN-CORE", "incore-helm"), rules) == ("normal", "incore")  # via local clone
+    assert classify(ev("ncsa", "unknown-repo"), rules) == ("normal", "ncsa")
 
 
 def test_github_repo_matched_to_clone_by_remote(rules, projects):
@@ -49,7 +45,7 @@ def test_github_repo_matched_to_clone_by_remote(rules, projects):
     rules._repos = None
     ev = RawEvent("github", "1", "point", "recorded", T0, owner="Center-for-AI-Innovation",
                   repo="uiuc-chat-frontend")
-    assert classify(ev, rules) == ("work", "chatuiuc")
+    assert classify(ev, rules) == ("normal", "chatuiuc")
 
 
 def _gh(kind, payload, repo="IN-CORE/incore-helm"):
@@ -83,22 +79,22 @@ def test_github_event_mapping():
     assert gh_raw(_gh("IssuesEvent", {"action": "labeled", "issue": {"number": 1}})) is None
 
 
-def test_github_title_lookup_skips_personal_and_caches():
+def test_github_title_lookup_caches():
     calls = []
-    gh = GitHub({"longshuicy"}, token="t")
+    gh = GitHub(token="t")
     gh._get = lambda path: calls.append(path) or {"title": "Bump chart"}
     trimmed = lambda repo: gh_raw(_gh("PullRequestEvent", {"action": "opened", "number": 9}, repo=repo))
     assert gh._with_title(trimmed("IN-CORE/incore-helm")).title == "Opened PR #9: Bump chart"
     assert gh._with_title(trimmed("IN-CORE/incore-helm")).title == "Opened PR #9: Bump chart"
-    assert gh._with_title(trimmed("longshuicy/diary")).title == "Opened PR #9"
     assert calls == ["/repos/IN-CORE/incore-helm/issues/9"]
 
 
-def test_github_personal_event_is_redacted(rules):
+def test_github_event_in_private_clone_is_redacted(rules, projects):
+    rules.private_paths = [projects / "personal/twentyfour"]
     raw = gh_raw(_gh("IssuesEvent", {"action": "opened", "issue": {"number": 1, "title": "Secret plans"}},
-                     repo="longshuicy/diary"))
+                     repo="longshuicy/twentyfour"))
     e = transform(raw, rules)
-    assert e.sensitivity == "personal" and e.title is None and e.url is None and e.attrs == {}
+    assert e.sensitivity == "private" and e.title is None and e.url is None and e.attrs == {}
 
 
 ME = {"userKey": "k1", "username": "cwang138"}
@@ -113,7 +109,7 @@ def _page(by, number=3, kind="page"):
 
 def test_confluence_mapping():
     raw = wiki_raw(_page({"userKey": "k1"}), ME, "https://wiki.test")
-    assert raw.title == "Edited page: INCORE release notes" and raw.always_work
+    assert raw.title == "Edited page: INCORE release notes"
     assert raw.url == "https://wiki.test/display/INCORE/Release+notes"
     assert raw.source_id == "100:v3" and iso(raw.start_at) == "2026-10-22T14:00:00Z"
     assert wiki_raw(_page({"userKey": "k1"}, number=1), ME, "").title.startswith("Created page")
