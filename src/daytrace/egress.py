@@ -1,12 +1,7 @@
-"""The only path from daytrace to an LLM. Builds the payload, scrubs it, and writes an audit copy.
+"""The only path from daytrace to an LLM: builds the payload, scrubs it, and writes an audit copy.
 
-A day payload holds one entry per project (time ranges, activity minutes, counts, up to three scrubbed titles,
-site names (or the page title when a page names no site), branch names), totals for what was too short to list,
-and day-level counts, with private time only as {"start", "end", "minutes"}. Day payloads are never sent alone.
-
-A week or month is built only from day payloads that already passed this gate, and leaves less: per-day
-totals instead of time ranges, and private time as one total. It is sent only after a person has reviewed the
-exact request; the review can only take things out (see without).
+Day payloads (per-project entries, scrubbed titles, private time as bare ranges) are never sent alone; a week or
+month payload merges them, keeping less, and is sent only after a person reviewed it (see `without`).
 """
 
 import json

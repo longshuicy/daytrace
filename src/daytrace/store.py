@@ -26,11 +26,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_start ON events(start_at);
 
-CREATE TABLE IF NOT EXISTS episodes (
-  id TEXT PRIMARY KEY, day TEXT, start_at TEXT, end_at TEXT,
-  project TEXT, categories TEXT, sensitivity TEXT,
-  label TEXT, event_ids TEXT
-);
+-- Week and month summaries, keyed "week:2026-10-18" / "month:2026-10".
 CREATE TABLE IF NOT EXISTS day_summaries (
   day TEXT PRIMARY KEY, stats TEXT, narrative TEXT, model TEXT, generated_at TEXT
 );
@@ -54,22 +50,6 @@ class Store:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
-        self._migrate()
-
-    def _migrate(self) -> None:
-        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(episodes)")}
-        if "details" not in columns:
-            with self.conn:
-                self.conn.execute("ALTER TABLE episodes ADD COLUMN details TEXT")
-        if self.get_meta("privacy_model") != "private-list":
-            # work/personal/unknown became normal/private; "ai" time became plain coding.
-            with self.conn:
-                self.conn.execute("UPDATE events SET sensitivity = 'normal' WHERE sensitivity IN ('work', 'unknown')")
-                self.conn.execute("UPDATE events SET sensitivity = 'private', category = 'private', project = NULL, "
-                                  "title = NULL, url = NULL, attrs = '{}' WHERE sensitivity = 'personal'")
-                self.conn.execute("UPDATE events SET category = 'code' WHERE category = 'ai'")
-                self.conn.execute("UPDATE episodes SET sensitivity = 'normal'")
-            self.set_meta("privacy_model", "private-list")
 
     def close(self) -> None:
         self.conn.close()
@@ -136,9 +116,6 @@ class Store:
             cur = self.conn.execute(
                 "DELETE FROM events WHERE start_at < ? AND COALESCE(end_at, start_at) >= ?",
                 (end, start),
-            )
-            self.conn.execute(
-                "DELETE FROM episodes WHERE start_at < ? AND end_at >= ?", (end, start)
             )
         return cur.rowcount
 

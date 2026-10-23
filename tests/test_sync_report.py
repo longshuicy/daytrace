@@ -142,27 +142,6 @@ def test_day_json_groups_stretch_and_line(tmp_path, rules, projects):
     assert [p["title"] for p in d["points"]] == ["Fix it"]
 
 
-def test_old_work_personal_rows_are_migrated(tmp_path):
-    from daytrace.store import Store
-
-    s = Store(tmp_path / "t.db")
-    row = "INSERT INTO events VALUES (?, 'fake', ?, 'span', 'observed', '2026-10-22T14:00:00Z', " \
-          "'2026-10-22T14:30:00Z', ?, ?, ?, NULL, ?, '{}', '2026-10-22T15:00:00Z')"
-    with s.conn:
-        s.conn.execute("DELETE FROM meta WHERE key = 'privacy_model'")
-        s.conn.execute(row, ("1", "1", "ai", "pdg", "Fix it", "work"))
-        s.conn.execute(row, ("2", "2", "browse", None, None, "unknown"))
-        s.conn.execute(row, ("3", "3", "other", "daytrace", "song", "personal"))
-    s.close()
-
-    s = Store(tmp_path / "t.db")
-    rows = {r["id"]: r for r in s.conn.execute("SELECT * FROM events")}
-    assert (rows["1"]["sensitivity"], rows["1"]["category"], rows["1"]["title"]) == ("normal", "code", "Fix it")
-    assert (rows["2"]["sensitivity"], rows["2"]["category"]) == ("normal", "browse")
-    assert (rows["3"]["sensitivity"], rows["3"]["category"], rows["3"]["project"], rows["3"]["title"]) == \
-        ("private", "private", None, None)
-
-
 def test_highlights_from_stored_traces(tmp_path, rules, projects):
     from daytrace import dayjson
 

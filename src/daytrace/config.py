@@ -25,15 +25,17 @@ def log_dir() -> Path:
 
 
 ENV_TEMPLATE = """\
-# daytrace secrets. Keep this file private (chmod 600); it is never committed.
-# Real environment variables take precedence over values here.
+# daytrace secrets (chmod 600). Real environment variables override these. See docs/setup.md.
 
-# LUMEN_BASE_URL=
+# LLM for week/month summaries: any OpenAI-compatible endpoint (Lumen, OpenRouter, ...).
+# LUMEN_BASE_URL=          # ends in /v1
 # LUMEN_MODEL=
 # LUMEN_API_KEY=
-# GITHUB_TOKEN=            # optional: defaults to your `gh auth token`
+# GITHUB_TOKEN=            # optional: defaults to `gh auth token`
 # CONFLUENCE_URL=https://wiki.ncsa.illinois.edu
-# CONFLUENCE_TOKEN=         # wiki > profile > Personal Access Tokens (read-only use)
+# CONFLUENCE_TOKEN=        # wiki > profile > Personal Access Tokens
+# MS_CLIENT_ID=            # Azure app registration, for `daytrace connect outlook`
+# MS_TENANT_ID=
 """
 
 

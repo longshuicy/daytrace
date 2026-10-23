@@ -12,7 +12,7 @@ from .report import day_bounds, merge, total
 GROUPS = [
     ("meeting", "Meetings", {"meeting"}),
     ("comms", "Mail & chat", {"email", "chat"}),
-    ("code", "Coding", {"code", "terminal", "commit", "push", "ai"}),
+    ("code", "Coding", {"code", "terminal", "commit", "push"}),
     ("review", "Review & issues", {"pr", "review", "issue", "release", "repo"}),
     ("writing", "Docs & wiki", {"docs", "wiki"}),
     ("browse", "Browsing", {"browse"}),

@@ -6,11 +6,6 @@ from datetime import datetime, timezone
 
 UTC = timezone.utc
 
-KINDS = ("point", "span", "plan")
-EVIDENCE = ("observed", "scheduled", "recorded", "inferred")
-SENSITIVITY = ("normal", "private")
-
-
 def iso(dt: datetime) -> str:
     """UTC timestamp at second precision; sorts correctly as a string."""
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

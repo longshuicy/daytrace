@@ -162,11 +162,6 @@ def slack_title(title: str) -> str:
     return " - ".join([what, *workspace[:1]])
 
 
-def details(ep: dict) -> str:
-    keys = ("kind", "group", "minutes", "activities", "counts", "titles", "subjects", "sites", "branches", "sources")
-    return json.dumps({k: ep.get(k) for k in keys})
-
-
 def entry_key(ep: dict) -> str:
     if ep["kind"] == "meeting":
         return "meetings"
