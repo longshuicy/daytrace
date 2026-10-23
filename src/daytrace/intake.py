@@ -19,9 +19,12 @@ def classify(raw: RawEvent, rules: Rules) -> tuple[str, str | None]:
         result = rules.classify_path(Path(raw.path))
         if result:
             return result
+    profile = rules.profile_sensitivity(raw.title)
+    if profile == "personal":
+        return ("personal", None)
     if raw.app in rules.personal_apps or rules.matches(rules.personal_titles, raw.title):
         return ("personal", None)
-    if raw.always_work:
+    if raw.always_work or profile == "work":
         return ("work", None)
     if raw.title:
         target = rules.resolve_title(raw.title)
@@ -40,7 +43,7 @@ def transform(raw: RawEvent, rules: Rules) -> Event | None:
     if rules.is_dropped(raw.title):
         return None
     sensitivity, project = classify(raw, rules)
-    category = raw.category or rules.category_for_app(raw.app)
+    category = raw.category or rules.category_for(raw.app, raw.title)
     if sensitivity == "work":
         title, url = scrub(raw.title), strip_url(raw.url)
         attrs = {k: scrub(v) if isinstance(v, str) and k not in UNSCRUBBED else v

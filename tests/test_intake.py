@@ -69,3 +69,27 @@ def test_scrub_and_strip_url():
     assert scrub("see https://h/p?token=zzz now") == "see https://h/p now"
     assert scrub("key sk-" + "A" * 30) == "key [redacted]"
     assert scrub("Fix helm values") == "Fix helm values"
+
+
+def test_web_apps_recognized_from_browser_titles(rules):
+    assert rules.category_for("Google Chrome", "INCORE plan - Google Docs") == "docs"
+    assert rules.category_for("Google Chrome", "Budget - Google Sheets - Google Chrome - Chen") == "docs"
+    assert rules.category_for("Google Chrome", "Release notes - NCSA Wiki - Confluence") == "wiki"
+    assert rules.category_for("Google Chrome", "Mail - Outlook") == "email"
+    assert rules.category_for("Google Chrome", "Pull requests · IN-CORE/incore-helm · GitHub") == "review"
+    assert rules.category_for("Google Chrome", "Some recipe blog") == "browse"
+    assert rules.category_for("Code", "notes - Google Docs.md") == "code"  # only browsers get title categories
+
+
+def test_browser_profile_decides_when_present(rules):
+    rules.work_profiles = {"Chen (illinois.edu)"}
+    doc = lambda title: window("Google Chrome", title)
+    e = transform(doc("Trip plan - Google Docs - Google Chrome - Chen (illinois.edu)"), rules)
+    assert e.sensitivity == "work" and e.category == "docs" and e.title == "Trip plan - Google Docs"
+    # The "Chen" profile is used for both, so it decides nothing and an unclear title stays unknown.
+    assert transform(doc("Trip plan - Google Docs - Google Chrome - Chen"), rules).sensitivity == "unknown"
+    assert transform(doc("Trip plan - Google Docs"), rules).sensitivity == "unknown"
+    # Work titles still count without a profile; personal titles still win over a work profile.
+    assert transform(doc("App registrations - Microsoft Azure"), rules).sensitivity == "work"
+    rules.personal_profiles = {"Home"}
+    assert transform(doc("Inbox - Google Chrome - Home"), rules).sensitivity == "personal"

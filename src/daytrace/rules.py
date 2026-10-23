@@ -28,7 +28,20 @@ personal = ["Messages", "WhatsApp", "Spotify", "Music", "Photos", "FaceTime", "T
 # Windows matching these are dropped entirely, never stored.
 drop = ["(?i)private browsing", "(?i)incognito", "(?i)inprivate"]
 personal = ["(?i)\\\\bbank", "(?i)gmail\\\\.com", "(?i)youtube", "(?i)netflix"]
-work = ["(?i)illinois", "(?i)confluence", "(?i)jira", "(?i)github"]
+work = ["(?i)illinois", "(?i)ncsa", "(?i)confluence", "(?i)jira", "(?i)github", "(?i)microsoft azure",
+        "(?i)google cloud console", "(?i)lumen"]
+# Web apps recognized from a browser tab title, checked in order: [pattern, category].
+categories = [
+  ["(?i)- Google (Docs|Sheets|Slides|Drive|Forms)\\\\b", "docs"],
+  ["(?i)confluence|wiki\\\\.ncsa", "wiki"],
+  ["(?i)\\\\boutlook\\\\b", "email"],
+  ["(?i)github", "review"],
+]
+
+[browser_profiles]
+# Chrome/Edge/Brave add " - Google Chrome - <profile>" to some window titles. When present, the profile decides.
+work = []
+personal = []
 
 [categories]
 "Microsoft Outlook" = "email"
@@ -78,6 +91,7 @@ activitywatch_raw_days = 7
 
 _SKIP_DIRS = {"node_modules", "venv", ".venv", "__pycache__", "dist", "build", "site-packages"}
 _GITHUB_REMOTE = re.compile(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
+_PROFILE = re.compile(r" [-–—] (?:Google Chrome|Chromium|Microsoft Edge|Brave) [-–—] (.+)$")
 _PATH_IN_TITLE = re.compile(r"(~|/Users/[^/\s]+)(/[^\s:—–|]*)?")
 
 
@@ -114,6 +128,9 @@ class Rules:
     activitywatch_raw_days: int
     personal_owners: set[str] = field(default_factory=set)
     lumen_mode: str = "dry-run"
+    title_categories: list[tuple[re.Pattern, str]] = field(default_factory=list)
+    work_profiles: set[str] = field(default_factory=set)
+    personal_profiles: set[str] = field(default_factory=set)
     _remotes: dict[Path, str | None] = field(default_factory=dict, repr=False)
     _repos: dict[str, Path] | None = field(default=None, repr=False)
 
@@ -139,6 +156,9 @@ class Rules:
             activitywatch_raw_days=retention.get("activitywatch_raw_days", 7),
             personal_owners={o.lower() for o in github.get("personal_owners", [])},
             lumen_mode=d.get("lumen", {}).get("mode", "dry-run"),
+            title_categories=[(re.compile(p), c) for p, c in titles.get("categories", [])],
+            work_profiles=set(d.get("browser_profiles", {}).get("work", [])),
+            personal_profiles=set(d.get("browser_profiles", {}).get("personal", [])),
         )
 
     @classmethod
@@ -199,8 +219,23 @@ class Rules:
             self._remotes[repo] = f"{m.group(1)}/{m.group(2)}".lower() if m else None
         return self._remotes[repo]
 
-    def category_for_app(self, app: str | None) -> str:
+    def category_for(self, app: str | None, title: str | None) -> str:
+        """A recognized web app in the title wins over the app's own category (Chrome showing a Google Doc)."""
+        if title and self.categories.get(app or "") == "browse":
+            for pattern, category in self.title_categories:
+                if pattern.search(title):
+                    return category
         return self.categories.get(app or "", "other")
+
+    def profile_sensitivity(self, title: str | None) -> str | None:
+        m = _PROFILE.search(title or "")
+        if not m:
+            return None
+        if m.group(1) in self.personal_profiles:
+            return "personal"
+        if m.group(1) in self.work_profiles:
+            return "work"
+        return None
 
     def repos(self) -> dict[str, Path]:
         """Git repositories under the git roots, keyed by lowercased folder name."""
