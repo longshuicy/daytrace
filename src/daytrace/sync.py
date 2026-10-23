@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
-from .adapters import Adapter
+from .adapters import Adapter, NotConfigured
 from .intake import transform
 from .models import iso, parse_iso
 from .rules import Rules
@@ -23,6 +23,7 @@ class SyncResult:
     dropped: int = 0
     purged: int = 0
     error: str | None = None
+    configured: bool = True
     at: str = ""
 
 
@@ -55,6 +56,8 @@ def sync(store: Store, rules: Rules, adapters: list[Adapter], now: datetime) -> 
             result.stored = store.upsert(events, now)
             store.set_cursor(adapter.name, iso(now), now)
             result.purged = _purge_raw(store, rules, adapter, zero, now)
+        except NotConfigured as exc:
+            result.configured, result.error = False, str(exc)
         except Exception as exc:  # one failing source must not stop the others
             result.ok, result.error = False, f"{type(exc).__name__}: {exc}"
         store.set_meta(f"status:{adapter.name}", json.dumps(asdict(result)))

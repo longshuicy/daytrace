@@ -2,6 +2,7 @@
 
 import os
 import re
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,6 +55,10 @@ work = ["(?i)illinois", "(?i)confluence", "(?i)jira", "(?i)github"]
 # Top-level folder under a work path -> project key. Unlisted folders use their lowercased name.
 "INCORE-2.0" = "incore"
 
+[github]
+# Repos owned by these GitHub users or orgs are personal, wherever they're cloned. Everything else is work.
+personal_owners = ["longshuicy"]
+
 [git]
 roots = ["~/Documents/Projects"]
 max_depth = 3
@@ -67,6 +72,7 @@ activitywatch_raw_days = 7
 """
 
 _SKIP_DIRS = {"node_modules", "venv", ".venv", "__pycache__", "dist", "build", "site-packages"}
+_GITHUB_REMOTE = re.compile(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$")
 _PATH_IN_TITLE = re.compile(r"(~|/Users/[^/\s]+)(/[^\s:—–|]*)?")
 
 
@@ -101,13 +107,15 @@ class Rules:
     git_max_depth: int
     git_authors: list[str]
     activitywatch_raw_days: int
+    personal_owners: set[str] = field(default_factory=set)
+    _remotes: dict[Path, str | None] = field(default_factory=dict, repr=False)
     _repos: dict[str, Path] | None = field(default=None, repr=False)
 
     @classmethod
     def from_text(cls, text: str) -> "Rules":
         d = tomllib.loads(text)
         paths, apps, titles = d.get("paths", {}), d.get("apps", {}), d.get("titles", {})
-        git, retention = d.get("git", {}), d.get("retention", {})
+        git, retention, github = d.get("git", {}), d.get("retention", {}), d.get("github", {})
         return cls(
             work_paths=_paths(paths.get("work", [])),
             personal_paths=_paths(paths.get("personal", [])),
@@ -123,6 +131,7 @@ class Rules:
             git_max_depth=git.get("max_depth", 3),
             git_authors=[e.lower() for e in git.get("author_emails", [])],
             activitywatch_raw_days=retention.get("activitywatch_raw_days", 7),
+            personal_owners={o.lower() for o in github.get("personal_owners", [])},
         )
 
     @classmethod
@@ -144,10 +153,44 @@ class Rules:
         root = _within(path, self.work_paths)
         if root is None:
             return None
+        if self.owner_of(path, root) in self.personal_owners:
+            return ("personal", None)
         rel = path.relative_to(root).parts
         if not rel:
             return ("work", None)
         return ("work", self.projects.get(rel[0], rel[0].lower()))
+
+    def classify_owner(self, owner: str, repo: str) -> tuple[str, str | None]:
+        """Classify a GitHub repo by owner; the project comes from its local clone when there is one."""
+        if owner.lower() in self.personal_owners:
+            return ("personal", None)
+        full = f"{owner}/{repo}".lower()
+        local = next((p for p in self.repos().values() if self.remote_of(p) == full), None)
+        local = local or self.repos().get(repo.lower())
+        if local:
+            result = self.classify_path(local)
+            if result and result[0] == "work":
+                return result
+        return ("work", self.projects.get(owner, owner.lower()))
+
+    def owner_of(self, path: Path, stop: Path) -> str | None:
+        """GitHub owner of the repo containing path, from its origin remote."""
+        for candidate in (path, *path.parents):
+            if (candidate / ".git").exists():
+                remote = self.remote_of(candidate)
+                return remote.split("/")[0] if remote else None
+            if candidate == stop:
+                return None
+        return None
+
+    def remote_of(self, repo: Path) -> str | None:
+        """'owner/name' (lowercased) of a local repo's GitHub origin, or None."""
+        if repo not in self._remotes:
+            out = subprocess.run(["git", "-C", str(repo), "config", "--get", "remote.origin.url"],
+                                 capture_output=True, text=True)
+            m = _GITHUB_REMOTE.search(out.stdout.strip())
+            self._remotes[repo] = f"{m.group(1)}/{m.group(2)}".lower() if m else None
+        return self._remotes[repo]
 
     def category_for_app(self, app: str | None) -> str:
         return self.categories.get(app or "", "other")

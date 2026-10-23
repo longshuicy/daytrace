@@ -40,6 +40,8 @@ class RawEvent:
     title: str | None = None
     url: str | None = None
     path: str | None = None  # repo or working directory, used for classification
+    owner: str | None = None  # GitHub owner and repo name, for events with no local path
+    repo: str | None = None
     always_work: bool = False  # e.g. every Outlook or Confluence event
     attrs: dict = field(default_factory=dict)
 

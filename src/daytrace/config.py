@@ -31,7 +31,9 @@ ENV_TEMPLATE = """\
 # LUMEN_BASE_URL=
 # LUMEN_MODEL=
 # LUMEN_API_KEY=
-# GITHUB_TOKEN=
+# GITHUB_TOKEN=            # optional: defaults to your `gh auth token`
+# CONFLUENCE_URL=https://wiki.ncsa.illinois.edu
+# CONFLUENCE_TOKEN=         # wiki > profile > Personal Access Tokens (read-only use)
 """
 
 
@@ -46,5 +48,9 @@ def load_env(path: Path | None = None) -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip().removeprefix("export ").strip()
-        value = value.strip().strip('"').strip("'")
+        value = value.strip()
+        if value and value[0] in "\"'":
+            value = value[1:].split(value[0], 1)[0]
+        else:
+            value = value.split(" #", 1)[0].strip()
         os.environ.setdefault(key, value)

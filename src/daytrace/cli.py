@@ -46,7 +46,10 @@ def cmd_sync(args) -> None:
     adapters = [a for a in all_adapters(rules) if not args.source or a.name in args.source]
     results = sync(store, rules, adapters, datetime.now(UTC))
     for r in results:
-        if r.ok and not args.quiet:
+        if not r.configured:
+            if not args.quiet:
+                print(f"{r.source:<14} not configured ({r.error})")
+        elif r.ok and not args.quiet:
             extra = f", {r.dropped} dropped" if r.dropped else ""
             extra += f", {r.purged} raw purged" if r.purged else ""
             print(f"{r.source:<14} {r.stored} events{extra}")
@@ -75,7 +78,10 @@ def cmd_status(args) -> None:
         raw = store.get_meta(f"status:{adapter.name}")
         st = json.loads(raw) if raw else None
         last = f"last sync {parse_iso(st['at']).astimezone():%m-%d %H:%M}" if st else "never synced"
-        state = "" if not st or st["ok"] else f"  FAILED {st['error']}"
+        if st and not st.get("configured", True):
+            last, state = "not configured", ""
+        else:
+            state = "" if not st or st["ok"] else f"  FAILED {st['error']}"
         print(f"{adapter.name:<12} {counts.get(adapter.name, 0):>6} events  {last}{state}")
     print(f"agent        {'installed' if launchd.plist_path().exists() else 'not installed'}")
 

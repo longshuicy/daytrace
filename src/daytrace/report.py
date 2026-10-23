@@ -102,7 +102,8 @@ def render(day: date, rows: list[sqlite3.Row], statuses: dict[str, str], day_zer
     status_bits = []
     for source, raw in sorted(statuses.items()):
         st = json.loads(raw)
-        status_bits.append(f"{source} {'ok' if st['ok'] else 'FAILED'}")
+        if st.get("configured", True):
+            status_bits.append(f"{source} {'ok' if st['ok'] else 'FAILED'}")
     out.append("sources: " + (" · ".join(status_bits) or "never synced"))
 
     if not rows:

@@ -7,6 +7,10 @@ from ..models import RawEvent
 from ..rules import Rules
 
 
+class NotConfigured(RuntimeError):
+    """The source needs setup (e.g. a token) before it can sync. Not an error."""
+
+
 class Adapter(Protocol):
     name: str
     # How far before the last sync to re-read, for events that arrive or grow late.
@@ -18,6 +22,8 @@ class Adapter(Protocol):
 def all_adapters(rules: Rules) -> list[Adapter]:
     from .activitywatch import ActivityWatch
     from .claude_code import ClaudeCode
+    from .confluence import Confluence
     from .git import Git
+    from .github import GitHub
 
-    return [ActivityWatch(), Git(rules), ClaudeCode()]
+    return [ActivityWatch(), Git(rules), ClaudeCode(), GitHub(rules.personal_owners), Confluence()]

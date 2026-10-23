@@ -12,6 +12,8 @@ UNSCRUBBED = {"sha"}
 
 def classify(raw: RawEvent, rules: Rules) -> tuple[str, str | None]:
     """Return (sensitivity, project). Fails closed: anything not clearly work is unknown."""
+    if raw.owner and raw.repo:
+        return rules.classify_owner(raw.owner, raw.repo)
     if raw.path:
         result = rules.classify_path(Path(raw.path))
         if result:
