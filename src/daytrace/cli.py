@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, launchd
+from . import config, dayjson, launchd
 from .adapters import all_adapters
 from .models import UTC, iso, parse_iso
 from .report import day_bounds, render
@@ -69,6 +69,19 @@ def cmd_today(args) -> None:
     print(render(day, rows, statuses, day_zero(store)))
 
 
+def cmd_day(args) -> None:
+    store, _ = _open()
+    day = date.fromisoformat(args.date) if args.date else date.today()
+    start, end = day_bounds(day)
+    statuses = {
+        r[0].removeprefix("status:"): json.loads(r[1])
+        for r in store.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'status:%'")
+    }
+    data = dayjson.build(day, store.events_between(iso(start), iso(end)), statuses,
+                         store.counts_by_source(), day_zero(store), datetime.now(UTC))
+    print(dayjson.dumps(data))
+
+
 def cmd_status(args) -> None:
     store, rules = _open()
     print(f"home         {config.home()}")
@@ -115,6 +128,11 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("today", help="show a day")
     p.add_argument("--date", help="YYYY-MM-DD, default today")
     p.set_defaults(func=cmd_today)
+
+    p = sub.add_parser("day", help="a day as JSON, for the desktop app")
+    p.add_argument("--date", help="YYYY-MM-DD, default today")
+    p.add_argument("--json", action="store_true", help="accepted for clarity; output is always JSON")
+    p.set_defaults(func=cmd_day)
 
     sub.add_parser("status", help="sources, counts, last sync").set_defaults(func=cmd_status)
 

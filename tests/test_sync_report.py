@@ -109,3 +109,31 @@ def test_merge_and_overlap_aware_totals(tmp_path, rules, projects):
 
     text = render(date(2026, 10, 22), rows, {"fake": s.get_meta("status:fake")}, ZERO)
     assert "pdg" in text and '"Fix it"' in text and "song" not in text
+
+
+def test_day_json_groups_stretch_and_line(tmp_path, rules, projects):
+    from daytrace import dayjson
+
+    s = store(tmp_path)
+    nine = datetime(2026, 10, 22, 9, 0).astimezone()
+    pdg = str(projects / "PDG")
+    events = [
+        raw("cc1", nine, 40, category="ai", path=pdg),
+        raw("cc2", nine + timedelta(minutes=43), 30, category="ai", path=pdg),  # 3-min gap: same stretch
+        raw("zoom", nine + timedelta(hours=2), 60, app="zoom.us"),  # meetings never count as a stretch
+        raw("song", nine, 20, app="Spotify", title="song"),
+        raw("c1", nine + timedelta(minutes=50), category="commit", title="Fix it", path=pdg),
+    ]
+    now = nine + timedelta(hours=4)
+    sync(s, rules, [Fake("fake", events)], now)
+    start, end = day_bounds(date(2026, 10, 22))
+    d = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)),
+                      {"fake": {"ok": True}}, s.counts_by_source(), ZERO, now)
+
+    assert d["summary"]["longest"]["project"] == "pdg" and d["summary"]["longest"]["minutes"] == 73
+    assert d["summary"]["groups"]["coord"] == 60 and d["summary"]["groups"]["nonwork"] == 20
+    assert d["summary"]["work_min"] == 130  # 40 + 30 AI (gap excluded) + 60 meeting
+    assert d["line"] == "2h 10m work · longest 1h 13m on pdg · 1 commit"
+    song = next(b for b in d["blocks"] if b["group"] == "nonwork")
+    assert song["titles"] == [] and song["project"] is None
+    assert [p["title"] for p in d["points"]] == ["Fix it"]

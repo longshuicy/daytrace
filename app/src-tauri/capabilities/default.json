@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the day view and pill windows may do",
+  "windows": ["main", "pill"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "opener:default"
+  ]
+}

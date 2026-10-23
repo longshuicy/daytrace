@@ -7,7 +7,7 @@ See [docs/design.md](docs/design.md) for the design.
 
 ## Status
 
-Milestones 1–2 done, milestone 3 in progress.
+Milestones 1–2 done; milestone 3 (online sources) and 6 (desktop app) in progress.
 
 | Source | What it records |
 |---|---|
@@ -42,6 +42,25 @@ brew install --cask activitywatch
 
 Other commands: `daytrace status`, `daytrace today --date 2026-10-22`, `daytrace forget START END`,
 `daytrace agent uninstall`.
+
+## Desktop app
+
+`app/` is a Tauri app: a menu-bar icon, a small always-on-top pill with today's strip and one summary line,
+and a day view (timeline, day clock, projects, traces, source status). It reads data through
+`daytrace day --json`, so it needs the CLI installed (`~/.local/bin/daytrace`, or set `DAYTRACE_BIN`).
+
+```bash
+cd app
+npm install
+npx tauri build          # -> src-tauri/target/release/bundle/macos/daytrace.app
+npx tauri dev            # run with hot reload
+```
+
+Drag the pill to move it, click it to open the day view. Closing windows hides them; quit from the menu-bar icon.
+
+UI-only preview in a browser, with no Rust build: `daytrace day --json > app/dev/dev-day.json`, then
+`npm --prefix app run dev` and open http://localhost:1420 (add `?window=pill` for the pill). `app/dev/` is
+gitignored.
 
 ## Privacy
 
