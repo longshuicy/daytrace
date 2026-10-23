@@ -87,10 +87,11 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
               const w = Math.max(2, x(new Date(b.end)) - x0);
               const y = laneY(b.group) + (LANE_H - BAR_H) / 2;
               const outline = b.evidence === "scheduled";
-              const fill = outline ? "none" : colorVar(b.group);
+              // Scheduled (calendar) time: a light tint plus outline, so it reads as "planned", not "observed".
               return (
                 <rect key={i} x={x0} y={y} width={w} height={BAR_H} rx={Math.min(4, w / 2)}
-                  fill={fill} stroke={outline ? colorVar(b.group) : "none"} strokeWidth={outline ? 1.5 : 0}
+                  fill={colorVar(b.group)} fillOpacity={outline ? 0.22 : 1}
+                  stroke={outline ? colorVar(b.group) : "none"} strokeWidth={outline ? 1.5 : 0}
                   onMouseMove={(e) => tooltip.show(e, <BlockDetail b={b} />)} onMouseLeave={tooltip.hide} />
               );
             })}
