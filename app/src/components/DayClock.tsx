@@ -18,13 +18,13 @@ interface Props {
 
 /** 24 hours as a circle, midnight at the top; one ring per activity group, inside out in lane order. */
 export default function DayClock({ day, tooltip, size = 300, compact = false }: Props) {
-  const inner = compact ? size * 0.31 : 58;
+  const inner = compact ? size * 0.3 : 58;
   const gap = 3;
-  const labelRoom = compact ? 8 : 34; // hour labels and the outer dot ring
+  const labelRoom = compact ? size * 0.07 : 34; // hour labels and the outer dot ring
   const rings = LANES.filter((g) => day.blocks.some((b) => b.group === g));
   const ringOf = (g: GroupKey) => (compact ? 0 : rings.indexOf(g));
   // Rings share whatever room is left, capped so a quiet day doesn't get fat rings.
-  const RING = compact ? size / 2 - labelRoom - inner - 6
+  const RING = compact ? size / 2 - labelRoom - inner - size * 0.05
     : Math.min(12, (size / 2 - labelRoom - inner) / Math.max(1, rings.length) - gap);
   // Later lanes paint first, so meetings sit on top of coding and so on in the single compact ring.
   const blocks = compact ? [...day.blocks].sort((a, b) => LANES.indexOf(b.group) - LANES.indexOf(a.group)) : day.blocks;
@@ -104,7 +104,7 @@ export default function DayClock({ day, tooltip, size = 300, compact = false }: 
       )}
       <circle r={inner - (compact ? 3 : 10)} fill={compact ? "transparent" : "var(--surface)"} />
       {compact ? (
-        <text y={4} textAnchor="middle" className="clock-value compact">{minutes(day.summary.active_min)}</text>
+        <text y={3.5} textAnchor="middle" className="clock-value compact">{minutes(day.summary.active_min)}</text>
       ) : (
         <>
           <text y={2} textAnchor="middle" className="clock-value">{minutes(day.summary.active_min)}</text>

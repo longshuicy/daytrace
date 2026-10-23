@@ -7,7 +7,7 @@ import {
 import type { Day, PeriodKind } from "../types";
 import DatePicker from "./DatePicker";
 import DayClock from "./DayClock";
-import { Change, ProjectsAndSites, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
+import { Change, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
 import PeriodView, { periodLabel, shiftPeriod } from "./PeriodView";
 import Timeline from "./Timeline";
 import { Tooltip, useTooltip } from "./Tooltip";
@@ -127,11 +127,10 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
           ? <Tile label="Longest focus" value={minutes(h.focus.minutes)}
             note={`${h.focus.label} · ${clock(h.focus.start)}–${clock(h.focus.end)}`} />
           : <Tile label="Longest focus" value="—" note="no stretch of 10 minutes yet" />}
-        {h.biggest
-          ? <Tile label="Biggest change" value={<Change {...h.biggest} />}
-            note={[`${h.biggest.files} file${h.biggest.files === 1 ? "" : "s"}`, h.biggest.project].filter(Boolean).join(" · ")}
-            extra={h.biggest.title} />
-          : <Tile label="Biggest change" value="—" note="no commits yet" />}
+        {h.commits
+          ? <Tile label="Total commits" value={<Change {...h.commits} />} note={commitNote(h.commits)}
+            extra={h.commits.projects.join(", ")} />
+          : <Tile label="Total commits" value="—" note="no commits yet" />}
       </section>
 
       {(h.shipped.length > 0 || h.working_on.length > 0) && (

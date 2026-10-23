@@ -1,9 +1,11 @@
 import json
+import sqlite3
 import subprocess
 from datetime import datetime, timedelta
 
 from daytrace.adapters.activitywatch import to_raw
 from daytrace.adapters.claude_code import parse_session_file
+from daytrace.adapters.cursor import Cursor
 from daytrace.adapters.git import Git, parse_shortstat
 from daytrace.intake import transform
 from daytrace.models import UTC
@@ -48,6 +50,38 @@ def test_claude_code_splits_on_gaps(tmp_path):
     assert "never stored" not in repr(spans)
 
 
+def test_cursor_chats_split_on_gaps(tmp_path):
+    (tmp_path / "globalStorage").mkdir()
+    for ws, d in {"w1": {"folder": "file:///w/My%20PDG"},
+                  "w2": {"workspace": f"file://{tmp_path}/two.code-workspace"}}.items():
+        (tmp_path / "workspaceStorage" / ws).mkdir(parents=True)
+        (tmp_path / "workspaceStorage" / ws / "workspace.json").write_text(json.dumps(d))
+    (tmp_path / "two.code-workspace").write_text(json.dumps({"folders": [{"path": "SMM"}, {"path": "other"}]}))
+    db = sqlite3.connect(tmp_path / "globalStorage" / "state.vscdb")
+    db.execute("CREATE TABLE composerHeaders (composerId, workspaceId, lastUpdatedAt, isSubagent)")
+    db.execute("CREATE TABLE cursorDiskKV (key, value)")
+    msg = lambda t, kind: {"createdAt": f"2026-10-22T{t}:00Z", "type": kind,
+                           "grouping": {"textPreview": "never stored"}}
+    chats = {"c1": ("w1", 0, [msg("14:00", 1), msg("14:03", 2), msg("14:08", 1), msg("15:30", 1)]),
+             "c2": ("w2", 0, [msg("16:00", 1)]),
+             "sub": ("w1", 1, [msg("14:01", 2)]),
+             "old": ("w1", 0, [msg("09:00", 1)])}
+    for cid, (ws, sub, headers) in chats.items():
+        updated = datetime(2026, 10, 21 if cid == "old" else 22, tzinfo=UTC).timestamp() * 1000
+        db.execute("INSERT INTO composerHeaders VALUES (?, ?, ?, ?)", (cid, ws, updated, sub))
+        db.execute("INSERT INTO cursorDiskKV VALUES (?, ?)",
+                   (f"composerData:{cid}", json.dumps({"name": "never stored", "fullConversationHeadersOnly": headers})))
+    db.commit()
+
+    since = datetime(2026, 10, 22, tzinfo=UTC)
+    spans = list(Cursor(tmp_path).fetch(since, since + timedelta(days=1)))
+    assert [(s.path, s.attrs["prompts"]) for s in spans] == \
+        [("/w/My PDG", 2), ("/w/My PDG", 1), (str((tmp_path / "SMM").resolve()), 1)]
+    assert spans[0].end_at - spans[0].start_at == timedelta(minutes=8)
+    assert spans[1].end_at - spans[1].start_at == timedelta(minutes=1)  # minimum span
+    assert "never stored" not in repr(spans)
+
+
 def test_shortstat():
     assert parse_shortstat(" 3 files changed, 10 insertions(+), 2 deletions(-)") == \
         {"files": 3, "insertions": 10, "deletions": 2}
@@ -69,6 +103,7 @@ def test_git_reads_own_commits(rules, projects, monkeypatch):
     commits = list(Git(rules).fetch(since, since + timedelta(days=1)))
     assert [c.title for c in commits] == ["Fix helm values"]
     assert commits[0].path == str(repo) and commits[0].attrs["files"] == 1
+    assert commits[0].attrs["branch"] in ("main", "master")
 
     # A rewritten copy on another branch (rebase, cherry-pick) has a new SHA but is the same work.
     git = ["git", "-C", str(repo), "-c", "user.email=me@illinois.edu", "-c", "user.name=x"]

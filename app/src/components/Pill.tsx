@@ -4,7 +4,7 @@ import { showDay, useDay } from "../api";
 import DayClock from "./DayClock";
 import "./pill.css";
 
-const SIZE = 112;
+const SIZE = 72;
 
 /** The floating window: today's day clock, a warning dot when a source fails to sync. */
 export default function Pill() {

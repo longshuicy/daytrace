@@ -26,7 +26,7 @@ AWAY = timedelta(minutes=5)          # so does being away from the keyboard long
 MIN_SITE = timedelta(minutes=1)
 MAX_SITES = 8
 SHIPPED = ("pr", "release", "wiki", "issue")  # traces that put something out into the world
-MAIN_BRANCHES = ("HEAD", "main", "master", "develop")
+TRUNKS = ("main", "master", "develop", "HEAD")  # listed last in "Working on": they don't name a thread of work
 
 
 def group_of(category: str, sensitivity: str) -> str:
@@ -142,42 +142,53 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
 
 
 def _highlights(points: list, spans: list, summary: dict) -> dict:
-    """What the day produced, from data already stored: what went out, the biggest commit, the branches
+    """What the day produced, from data already stored: what went out, commit totals, the branches
     Claude Code sessions were on, and the longest focus. Meetings and mail have their own tiles."""
     shown = [p for p in points if p["sensitivity"] != "private"]
     shipped = [{"title": p["title"], "url": p["url"], "project": p["project"], "category": p["category"]}
                for p in shown if p["category"] in SHIPPED and p["title"]]
 
-    biggest = None
-    for p in shown:
-        if p["category"] != "commit":
+    commits = None
+    for p in points:
+        private = p["sensitivity"] == "private"
+        if (p["source"] != "git") if private else (p["category"] != "commit"):
+            continue
+        commits = commits or {"count": 0, "private": 0, "files": 0, "insertions": 0, "deletions": 0, "projects": []}
+        commits["count"] += 1
+        if private:  # stored without project or line counts
+            commits["private"] += 1
             continue
         a = json.loads(p["attrs"] or "{}")
-        size = (a.get("insertions") or 0) + (a.get("deletions") or 0)
-        if size and (biggest is None or size > biggest["_size"]):
-            biggest = {"_size": size, "title": p["title"], "project": p["project"], "files": a.get("files") or 0,
-                       "insertions": a.get("insertions") or 0, "deletions": a.get("deletions") or 0}
-    if biggest:
-        del biggest["_size"]
+        for k in ("files", "insertions", "deletions"):
+            commits[k] += a.get(k) or 0
+        if p["project"] and p["project"] not in commits["projects"]:
+            commits["projects"].append(p["project"])
 
     return {
         "shipped": shipped,
-        "biggest": biggest,
-        "working_on": working_on(spans)[:3],
+        "commits": commits,
+        "working_on": working_on(spans, points),
         "focus": summary["longest"],
     }
 
 
-def working_on(spans: list) -> list[dict]:
-    """Feature branches Claude Code sessions were on, with time per (project, branch), most first."""
-    branches = defaultdict(list)
+def working_on(spans: list, points: list) -> list[dict]:
+    """Branches Claude Code sessions were on or commits landed on, with time and commits per
+    (project, branch): feature branches before trunks, then most time, then most commits."""
+    branches, commits = defaultdict(list), Counter()
     for r, s, e in spans:
         branch = json.loads(r["attrs"] or "{}").get("branch") if r["source"] == "claude_code" else None
-        if branch and branch not in MAIN_BRANCHES and r["sensitivity"] != "private":
+        if branch and r["sensitivity"] != "private":
             branches[(r["project"], branch)].append((s, e))
-    rows = sorted(({"project": p, "branch": b, "minutes": _minutes(total(v))} for (p, b), v in branches.items()),
-                  key=lambda w: -w["minutes"])
-    return [w for w in rows if w["minutes"]]
+    for p in points:
+        branch = json.loads(p["attrs"] or "{}").get("branch") if p["category"] == "commit" else None
+        if branch and p["sensitivity"] != "private":
+            commits[(p["project"], branch)] += 1
+    rows = [{"project": p, "branch": b, "minutes": _minutes(total(branches.get((p, b), []))), "commits": commits[(p, b)],
+             "trunk": b in TRUNKS}
+            for p, b in set(branches) | set(commits)]
+    return sorted((w for w in rows if w["minutes"] or w["commits"]),
+                  key=lambda w: (w["trunk"], -w["minutes"], -w["commits"], w["project"] or "", w["branch"]))
 
 
 def sites(spans: list) -> list[dict]:

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { summarizePeriod, usePeriod } from "../api";
 import { GROUP_LABEL, ago, clock, minutes, shiftDate, today } from "../format";
 import type { Exclusion, Period, PeriodDay, PeriodKind, ReviewEntry, ReviewRequest } from "../types";
-import { Change, ProjectsAndSites, ShippedCard, Tile, WorkingOnCard } from "./parts";
+import { Change, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard } from "./parts";
 
 const parse = (iso: string) => new Date(`${iso}T12:00:00`);
 const iso = (d: Date) => d.toLocaleDateString("en-CA");
@@ -96,12 +96,10 @@ function Body({ kind, p, openDay }: { kind: PeriodKind; p: Period; openDay: (d: 
             {spark((d) => d.focus_min, "var(--g-code)", "Longest focus")}
           </Tile>
           : <Tile label={`Longest focus · ${word} best`} value="—" note="no focus stretch yet" />}
-        {p.biggest
-          ? <Tile label={`Biggest change · ${word}`} value={<Change {...p.biggest} />}
-            note={[`${p.biggest.files} file${p.biggest.files === 1 ? "" : "s"}`, p.biggest.project, when(p.biggest.date)]
-              .filter(Boolean).join(" · ")}
-            extra={p.biggest.title} />
-          : <Tile label={`Biggest change · ${word}`} value="—" note="no commits yet" />}
+        {p.commits
+          ? <Tile label={`Total commits · ${word}`} value={<Change {...p.commits} />} note={commitNote(p.commits)}
+            extra={p.commits.projects.join(", ")} />
+          : <Tile label={`Total commits · ${word}`} value="—" note="no commits yet" />}
       </section>
 
       {kind === "week" ? <ByDay p={p} openDay={openDay} /> : <MonthGrid p={p} openDay={openDay} />}

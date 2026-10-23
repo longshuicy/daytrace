@@ -9,7 +9,7 @@ from ..models import RawEvent, iso, parse_iso
 from ..rules import Rules
 
 RECORD, FIELD = "\x1e", "\x1f"
-LOG_FORMAT = f"{RECORD}%H{FIELD}%aI{FIELD}%ae{FIELD}%s"
+LOG_FORMAT = f"{RECORD}%H{FIELD}%aI{FIELD}%ae{FIELD}%S{FIELD}%s"  # %S: the ref --source reached it from
 
 
 class Git:
@@ -31,7 +31,7 @@ class Git:
         authors = self.authors()
         for repo in self.rules.repos().values():
             out = subprocess.run(
-                ["git", "-C", str(repo), "log", "--all", "--no-merges", "--shortstat",
+                ["git", "-C", str(repo), "log", "--all", "--source", "--no-merges", "--shortstat",
                  f"--since={iso(since)}", f"--until={iso(until)}", f"--format={LOG_FORMAT}"],
                 capture_output=True, text=True,
             )
@@ -45,7 +45,7 @@ class Git:
                 yield RawEvent(
                     "git", commit_key(commit), "point", "recorded", commit["at"],
                     category="commit", title=commit["subject"], path=str(repo),
-                    attrs={"repo": repo.name, "sha": commit["sha"], **commit["stat"]},
+                    attrs={"repo": repo.name, "sha": commit["sha"], "branch": commit["branch"], **commit["stat"]},
                 )
 
 
@@ -59,12 +59,21 @@ def parse_log(text: str) -> list[dict]:
     commits = []
     for record in text.split(RECORD)[1:]:
         header, _, rest = record.partition("\n")
-        sha, at, email, subject = header.split(FIELD, 3)
+        sha, at, email, ref, subject = header.split(FIELD, 4)
         commits.append({
-            "sha": sha, "at": parse_iso(at), "email": email.lower(), "subject": subject,
+            "sha": sha, "at": parse_iso(at), "email": email.lower(), "branch": branch_of(ref), "subject": subject,
             "stat": parse_shortstat(rest),
         })
     return commits
+
+
+def branch_of(ref: str) -> str | None:
+    """refs/heads/x and refs/remotes/origin/x are branch x; tags, stash and the like are no branch."""
+    if ref.startswith("refs/heads/"):
+        return ref.removeprefix("refs/heads/")
+    if ref.startswith("refs/remotes/"):
+        return ref.removeprefix("refs/remotes/").partition("/")[2] or None
+    return None
 
 
 def parse_shortstat(text: str) -> dict:

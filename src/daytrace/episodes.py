@@ -79,7 +79,7 @@ def _episode(kind: str, name: str | None, items: list) -> dict:
     for s, e, r in items:
         attrs = json.loads(r["attrs"] or "{}")
         branch = attrs.get("branch")
-        if branch and branch not in ("HEAD", "main", "master", "develop"):
+        if branch:
             branches.add(branch)
         if r["end_at"]:
             by_category[r["category"]].append((s, e))

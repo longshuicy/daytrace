@@ -24,8 +24,8 @@ def month_of(day: date) -> tuple[date, date]:
 def build(store: Store, first: date, last: date, day_zero: datetime, now: datetime, kind: str = "week") -> dict:
     """Stats for first..last (inclusive). Days after today or before tracking started have no data."""
     today = now.astimezone().date()
-    days, spans = [], []
-    shipped, biggest, best = [], None, None
+    days, spans, points = [], [], []
+    shipped, commits, best = [], None, None
     projects = defaultdict(Counter)
     counts = Counter()
     for i in range((last - first).days + 1):
@@ -49,13 +49,15 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
             projects[p["project"]].update({"minutes": p["minutes"], "commits": p["commits"], "prs": p["prs"]})
         h = d["highlights"]
         shipped += [{**x, "date": row["date"]} for x in h["shipped"]]
-        big = h["biggest"]
-        if big and (biggest is None or big["insertions"] + big["deletions"]
-                    > biggest["insertions"] + biggest["deletions"]):
-            biggest = {**big, "date": row["date"]}
+        if h["commits"]:
+            commits = commits or {"count": 0, "private": 0, "files": 0, "insertions": 0, "deletions": 0, "projects": []}
+            for k in ("count", "private", "files", "insertions", "deletions"):
+                commits[k] += h["commits"][k]
+            commits["projects"] += [x for x in h["commits"]["projects"] if x not in commits["projects"]]
         if s["longest"] and (best is None or s["longest"]["minutes"] > best["minutes"]):
             best = {**s["longest"], "date": row["date"]}
         spans += _spans(rows, start, end, now)
+        points += [r for r in rows if not r["end_at"] and r["category"] == "commit"]
 
     data_days = [r for r in days if r["has_data"]]
     active = sum(r["active_min"] for r in days)
@@ -76,9 +78,9 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
             "emails_received": counts["emails_received"],
         },
         "focus": best,
-        "biggest": biggest,
+        "commits": commits,
         "shipped": shipped,
-        "working_on": dayjson.working_on(spans)[:8],
+        "working_on": dayjson.working_on(spans, points),
         "projects": sorted(({"project": p, "minutes": c["minutes"], "commits": c["commits"], "prs": c["prs"]}
                             for p, c in projects.items()), key=lambda r: (-r["minutes"], r["project"])),
         "sites": dayjson.sites(spans),

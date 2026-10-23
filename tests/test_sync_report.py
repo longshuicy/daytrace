@@ -153,22 +153,31 @@ def test_highlights_from_stored_traces(tmp_path, rules, projects):
                                                       path=pdg, attrs={"branch": branch})
     events = [
         cc("s1", nine, 30, "feature/water"),
-        cc("s2", nine + timedelta(hours=1), 10, "main"),                      # main is not a thread
+        cc("s2", nine + timedelta(hours=1), 10, "main"),
         raw("c1", nine + timedelta(minutes=20), category="commit", title="Small fix", path=pdg,
-            attrs={"insertions": 3, "deletions": 1, "files": 1}),
+            attrs={"insertions": 3, "deletions": 1, "files": 1, "branch": "fix/typo"}),
         raw("c2", nine + timedelta(minutes=25), category="commit", title="Water app", path=pdg,
             attrs={"insertions": 400, "deletions": 20, "files": 9}),
         raw("pr", nine + timedelta(minutes=28), category="pr", title="Opened PR #7: Water app", path=pdg),
-        raw("p1", nine, category="commit", title="diary", path=str(projects / "personal/daytrace")),
+        RawEvent("git", "p1", "point", "recorded", nine, category="commit", title="diary",
+                 path=str(projects / "personal/daytrace")),
     ]
     rules.private_paths = [projects / "personal"]
     now = nine + timedelta(hours=3)
-    sync(s, rules, [Fake("fake", events[2:]), Fake("claude_code", events[:2])], now)
+    sync(s, rules, [Fake("fake", events[2:6]), Fake("git", events[6:]), Fake("claude_code", events[:2])], now)
     start, end = day_bounds(date(2026, 10, 22))
     h = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO, now)["highlights"]
     assert [x["title"] for x in h["shipped"]] == ["Opened PR #7: Water app"]
-    assert h["biggest"] == {"title": "Water app", "project": "pdg", "files": 9, "insertions": 400, "deletions": 20}
-    assert h["working_on"] == [{"project": "pdg", "branch": "feature/water", "minutes": 30}]
+    # The private commit counts, but adds no project, files or lines.
+    assert h["commits"] == {"count": 3, "private": 1, "files": 10, "insertions": 403, "deletions": 21,
+                            "projects": ["pdg"]}
+    # Commits name branches too, even ones no Claude Code session was on.
+    # Trunks go last whatever their time.
+    assert h["working_on"] == [
+        {"project": "pdg", "branch": "feature/water", "minutes": 30, "commits": 0, "trunk": False},
+        {"project": "pdg", "branch": "fix/typo", "minutes": 0, "commits": 1, "trunk": False},
+        {"project": "pdg", "branch": "main", "minutes": 10, "commits": 0, "trunk": True},
+    ]
 
 
 def test_focus_counts_reading_and_breaks_on_interruptions(tmp_path, rules):

@@ -50,6 +50,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   activitywatch: "ActivityWatch",
   git: "Local git",
   claude_code: "Claude Code",
+  cursor: "Cursor",
   github: "GitHub",
   confluence: "Wiki",
   outlook_calendar: "Outlook calendar",

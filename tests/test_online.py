@@ -70,10 +70,12 @@ def test_github_event_mapping():
     assert push.title == "Pushed 2 commits to main"
     # Trimmed payloads (no size, no PR title) still produce something sensible.
     assert gh_raw(_gh("PushEvent", {"ref": "refs/heads/dev"})).title == "Pushed commits to dev"
-    assert gh_raw(_gh("PullRequestEvent", {"action": "opened", "number": 9})).title == "Opened PR #9"
+    trimmed = gh_raw(_gh("PullRequestEvent", {"action": "opened", "number": 9}))
+    assert trimmed.title == "Opened PR #9" and trimmed.url == "https://github.com/IN-CORE/incore-helm/pull/9"
 
     comment = gh_raw(_gh("IssueCommentEvent", {"issue": {"number": 3, "title": "Bug", "pull_request": {}}}))
     assert comment.category == "review" and comment.title == "Commented on PR #3: Bug"
+    assert comment.url == "https://github.com/IN-CORE/incore-helm/pull/3"
     assert gh_raw(_gh("WatchEvent", {})) is None
     assert gh_raw(_gh("PullRequestEvent", {"action": "assigned", "pull_request": pr})) is None
     assert gh_raw(_gh("IssuesEvent", {"action": "labeled", "issue": {"number": 1}})) is None

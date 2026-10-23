@@ -125,9 +125,20 @@ export interface Site {
 /** What the day produced, built locally from stored traces. */
 export interface Highlights {
   shipped: { title: string; url: string | null; project: string | null; category: string }[];
-  biggest: { title: string; project: string | null; files: number; insertions: number; deletions: number } | null;
-  working_on: { project: string | null; branch: string; minutes: number }[];
+  commits: Commits | null;
+  working_on: { project: string | null; branch: string; minutes: number; commits: number; trunk: boolean }[];
   focus: Focus | null;
+}
+
+/** All of the commits in a day or period, added up. */
+export interface Commits {
+  count: number;
+  /** Included in count; private commits have no project, files or lines. */
+  private: number;
+  files: number;
+  insertions: number;
+  deletions: number;
+  projects: string[];
 }
 
 /** Longest stretch without interruptions; label is a project, document title, site or app. */
@@ -165,7 +176,7 @@ export interface Period {
     emails_sent: number; emails_received: number;
   };
   focus: (Focus & { date: string }) | null;
-  biggest: (NonNullable<Highlights["biggest"]> & { date: string }) | null;
+  commits: Commits | null;
   shipped: (Highlights["shipped"][number] & { date: string })[];
   working_on: Highlights["working_on"];
   projects: ProjectRow[];

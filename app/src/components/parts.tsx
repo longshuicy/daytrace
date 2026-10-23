@@ -1,7 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState, type ReactNode } from "react";
 import { colorVar, minutes } from "../format";
-import type { Highlights, ProjectRow, Site } from "../types";
+import type { Commits, Highlights, ProjectRow, Site } from "../types";
 
 /** Pieces the day, week and month views share. */
 
@@ -20,6 +20,11 @@ export function Tile({ label, value, note, extra, children }:
 
 export function Change({ insertions, deletions }: { insertions: number; deletions: number }) {
   return <><span className="added">+{insertions}</span> <span className="removed">−{deletions}</span></>;
+}
+
+export function commitNote(c: Commits) {
+  return `${c.count} commit${c.count === 1 ? "" : "s"} · ${c.files} file${c.files === 1 ? "" : "s"}`
+    + (c.private ? ` · incl. ${c.private} private` : "");
 }
 
 type Dir = 1 | -1;
@@ -42,15 +47,12 @@ export function useSort<K extends string>(initial: K, initialDir: Dir = 1) {
   return { header, sorted };
 }
 
-const SHOWN = 5;
-
 /** A card of one-line rows: the thing on the left, where and when on the right. */
-export function ListCard({ label, more = 0, children }: { label: string; more?: number; children: ReactNode }) {
+export function ListCard({ label, children }: { label: string; children: ReactNode }) {
   return (
     <section className="card hl-card" aria-label={label}>
       <h2 className="hl-label">{label}</h2>
       <ul className="hl-list">{children}</ul>
-      {more > 0 && <div className="tile-note hl-more">+{more} more</div>}
     </section>
   );
 }
@@ -58,8 +60,8 @@ export function ListCard({ label, more = 0, children }: { label: string; more?: 
 export function ShippedCard({ items, meta }:
   { items: Highlights["shipped"]; meta?: (i: number) => string | null }) {
   return (
-    <ListCard label="Shipped" more={items.length - SHOWN}>
-      {items.slice(0, SHOWN).map((x, i) => (
+    <ListCard label="Shipped">
+      {items.map((x, i) => (
         <li key={i}>
           {x.url ? <button className="link hl-main" title={x.title} onClick={() => openUrl(x.url!)}>{x.title}</button>
             : <span className="hl-main" title={x.title}>{x.title}</span>}
@@ -72,11 +74,14 @@ export function ShippedCard({ items, meta }:
 
 export function WorkingOnCard({ label, items }: { label: string; items: Highlights["working_on"] }) {
   return (
-    <ListCard label={label} more={items.length - SHOWN}>
-      {items.slice(0, SHOWN).map((w) => (
-        <li key={`${w.project}/${w.branch}`}>
+    <ListCard label={label}>
+      {items.map((w) => (
+        <li key={`${w.project}/${w.branch}`} className={w.trunk ? "trunk" : undefined}>
           <code className="branch" title={w.branch}>{w.branch}</code>
-          <span className="hl-sub">{[w.project, minutes(w.minutes)].filter(Boolean).join(" · ")}</span>
+          <span className="hl-sub">
+            {[w.project, w.minutes ? minutes(w.minutes) : null,
+              w.commits ? `${w.commits} commit${w.commits === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")}
+          </span>
         </li>
       ))}
     </ListCard>

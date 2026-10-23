@@ -98,27 +98,27 @@ def to_raw(e: dict) -> RawEvent | None:
             return None
         if action == "closed" and pr.get("merged"):
             action = "merged"
-        category, title, url = "pr", _numbered(f"{action.capitalize()} PR", pr, payload), pr.get("html_url")
+        category, title, url = "pr", _numbered(f"{action.capitalize()} PR", pr, payload), _link(pr, payload, web, "pull")
     elif kind == "PullRequestReviewEvent":
         pr = payload.get("pull_request", {})
         state = payload.get("review", {}).get("state", "")
         verb = {"approved": "Approved", "changes_requested": "Requested changes on"}.get(state.lower(), "Reviewed")
-        category, title, url = "review", _numbered(f"{verb} PR", pr, payload), pr.get("html_url")
+        category, title, url = "review", _numbered(f"{verb} PR", pr, payload), _link(pr, payload, web, "pull")
     elif kind == "PullRequestReviewCommentEvent":
         pr = payload.get("pull_request", {})
-        category, title, url = "review", _numbered("Commented on PR", pr, payload), pr.get("html_url")
+        category, title, url = "review", _numbered("Commented on PR", pr, payload), _link(pr, payload, web, "pull")
     elif kind == "IssuesEvent":
         issue = payload.get("issue", {})
         if payload.get("action") not in KEPT_ACTIONS:
             return None
         action = payload["action"].capitalize()
-        category, title, url = "issue", _numbered(f"{action} issue", issue, payload), issue.get("html_url")
+        category, title, url = "issue", _numbered(f"{action} issue", issue, payload), _link(issue, payload, web, "issues")
     elif kind == "IssueCommentEvent":
         issue = payload.get("issue", {})
         is_pr = "pull_request" in issue
         category = "review" if is_pr else "issue"
         title = _numbered(f"Commented on {'PR' if is_pr else 'issue'}", issue, payload)
-        url = issue.get("html_url")
+        url = _link(issue, payload, web, "pull" if is_pr else "issues")
     elif kind == "CreateEvent":
         ref_type = payload.get("ref_type", "ref")
         ref = payload.get("ref") or ""
@@ -136,6 +136,12 @@ def to_raw(e: dict) -> RawEvent | None:
         attrs={"repo": full_name, "type": kind, "number": item.get("number") or payload.get("number"),
                "has_title": bool(item.get("title"))},
     )
+
+
+def _link(item: dict, payload: dict, web: str, kind: str) -> str | None:
+    """The PR or issue page. The public events feed often leaves out html_url, but not the number."""
+    number = item.get("number") or payload.get("number")
+    return item.get("html_url") or (f"{web}/{kind}/{number}" if number else None)
 
 
 def _numbered(prefix: str, item: dict, payload: dict) -> str:

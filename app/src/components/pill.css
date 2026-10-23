@@ -10,11 +10,11 @@
   color: var(--pill-ink);
 }
 .pill svg { display: block; }
-.pill .clock-value.compact { font-size: 12px; font-weight: 600; fill: var(--pill-ink); }
-.pill-empty { font-size: 14px; }
+.pill .clock-value.compact { font-size: 10px; font-weight: 600; fill: var(--pill-ink); }
+.pill-empty { font-size: 12px; }
 .pill-warn {
-  position: absolute; top: 8px; right: 8px;
-  width: 8px; height: 8px; border-radius: 50%;
+  position: absolute; top: 5px; right: 5px;
+  width: 6px; height: 6px; border-radius: 50%;
   background: var(--critical);
 }
 .muted { color: var(--pill-ink-2); }

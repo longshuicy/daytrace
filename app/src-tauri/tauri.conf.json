@@ -27,8 +27,8 @@
       {
         "label": "pill",
         "title": "daytrace pill",
-        "width": 128,
-        "height": 128,
+        "width": 80,
+        "height": 80,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
@@ -37,7 +37,7 @@
         "visibleOnAllWorkspaces": true,
         "shadow": false,
         "focus": false,
-        "windowEffects": { "effects": ["hudWindow"], "state": "active", "radius": 28 }
+        "windowEffects": { "effects": ["hudWindow"], "state": "active", "radius": 18 }
       }
     ],
     "security": {
