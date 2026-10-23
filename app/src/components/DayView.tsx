@@ -70,8 +70,12 @@ function Body({ day, fullDay, setFullDay, asTable, setAsTable, tooltip }: BodyPr
       <section className="tiles">
         <Tile label="Work" value={minutes(s.work_min)} hero
           note={s.first ? `active ${clock(s.first)}–${clock(s.last!)}` : "no activity yet"} />
+        <Tile label="Meetings" value={String(s.counts.meetings)}
+          note={s.counts.meetings ? `${minutes(s.counts.meeting_min)} scheduled` : "from your calendar"} />
         <Tile label="Longest stretch" value={s.longest ? minutes(s.longest.minutes) : "—"}
           note={s.longest ? `${s.longest.project}, ${clock(s.longest.start)}–${clock(s.longest.end)}` : "on one project"} />
+        <Tile label="Email sent" value={String(s.counts.emails_sent)}
+          note={`${s.counts.emails_received} received`} />
         <Tile label="Commits" value={String(s.counts.commits)} note={`${s.counts.pushes} push${s.counts.pushes === 1 ? "" : "es"}`} />
         <Tile label="Pull requests" value={String(s.counts.prs)} note={`${s.counts.reviews} review${s.counts.reviews === 1 ? "" : "s"}`} />
         <Tile label="Wiki edits" value={String(s.counts.wiki)} note={s.counts.issues ? `${s.counts.issues} issues` : "Confluence"} />
@@ -89,8 +93,9 @@ function Body({ day, fullDay, setFullDay, asTable, setAsTable, tooltip }: BodyPr
         </div>
         {asTable ? <EventTable day={day} /> : <Timeline day={day} fullDay={fullDay} tooltip={tooltip} />}
         <p className="caption">
-          Lanes overlap: you can browse during a meeting. Bars are spans of activity; dots are single traces
-          (a commit, a PR). Grey background is time away from the keyboard.
+          Lanes overlap: you can browse during a meeting. Bars are spans of activity, outlined bars are
+          calendar events (scheduled, not necessarily attended), dots are single traces (a commit, a PR, a sent
+          email). Grey background is time away from the keyboard.
         </p>
       </section>
 

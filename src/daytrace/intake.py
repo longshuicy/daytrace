@@ -6,8 +6,9 @@ from .models import Event, RawEvent, iso
 from .rules import Rules
 from .scrub import scrub, strip_url
 
-# Attributes that look like secrets to the scrubber but aren't (a commit SHA is 40 hex chars).
-UNSCRUBBED = {"sha"}
+# Attributes that look like secrets to the scrubber but aren't (a commit SHA is 40 hex chars,
+# an Outlook conversation id is long base64).
+UNSCRUBBED = {"sha", "thread"}
 
 
 def classify(raw: RawEvent, rules: Rules) -> tuple[str, str | None]:

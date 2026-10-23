@@ -53,9 +53,13 @@ export const SOURCE_LABEL: Record<string, string> = {
   claude_code: "Claude Code",
   github: "GitHub",
   confluence: "Wiki",
+  outlook_calendar: "Outlook calendar",
+  outlook_mail: "Outlook mail",
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
+  meeting: "Meeting",
+  email: "Email sent",
   commit: "Commit",
   push: "Push",
   pr: "Pull request",

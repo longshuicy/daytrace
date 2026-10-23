@@ -16,6 +16,8 @@ Milestones 1–2 done; milestone 3 (online sources) and 6 (desktop app) in progr
 | Claude Code | active session spans per project (never prompt content) |
 | GitHub | PRs opened/merged, reviews, issues, comments, pushes (uses your `gh` sign-in) |
 | Confluence | pages and blog posts you created or edited, your comments (needs a token) |
+| Outlook calendar | meetings: subject, time, attendee count, your response (scheduled, not proof you attended) |
+| Outlook mail | sent and received: subject, time, the other side's *domains*. Never bodies or addresses |
 
 To connect the NCSA wiki: wiki → your profile → **Personal Access Tokens** → create one, then add it to
 `~/.daytrace/.env`:
@@ -23,6 +25,11 @@ To connect the NCSA wiki: wiki → your profile → **Personal Access Tokens** �
 ```
 CONFLUENCE_TOKEN=...
 ```
+
+To connect Outlook: register a single-tenant app in the UIUC Azure portal (public client flows on; delegated
+`Calendars.Read`, `Mail.ReadBasic`, `offline_access`, `User.Read`; no secret), put `MS_CLIENT_ID` and
+`MS_TENANT_ID` in `~/.daytrace/.env`, then run `daytrace connect outlook` and follow the code prompt.
+The sign-in is kept in `~/.daytrace/msgraph-token.json` (chmod 600); `daytrace disconnect outlook` removes it.
 
 ## Quick start
 

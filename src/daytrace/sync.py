@@ -22,6 +22,7 @@ class SyncResult:
     stored: int = 0
     dropped: int = 0
     purged: int = 0
+    removed: int = 0
     error: str | None = None
     configured: bool = True
     at: str = ""
@@ -54,6 +55,10 @@ def sync(store: Store, rules: Rules, adapters: list[Adapter], now: datetime) -> 
                 else:
                     events.append(event)
             result.stored = store.upsert(events, now)
+            window = getattr(adapter, "window", None)
+            if window:  # the source re-read this whole range, so anything it no longer returns is gone
+                w0, w1 = window(since, now)
+                result.removed = store.replace_window(adapter.name, iso(w0), iso(w1), {e.id for e in events})
             store.set_cursor(adapter.name, iso(now), now)
             result.purged = _purge_raw(store, rules, adapter, zero, now)
         except NotConfigured as exc:

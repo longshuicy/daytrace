@@ -55,7 +55,10 @@ export interface Summary {
   groups: Partial<Record<GroupKey, number>>;
   projects: ProjectRow[];
   longest: { project: string; minutes: number; start: string; end: string } | null;
-  counts: { commits: number; prs: number; reviews: number; pushes: number; wiki: number; issues: number };
+  counts: {
+    commits: number; prs: number; reviews: number; pushes: number; wiki: number; issues: number;
+    meetings: number; meeting_min: number; emails_sent: number; emails_received: number;
+  };
 }
 
 export interface Day {

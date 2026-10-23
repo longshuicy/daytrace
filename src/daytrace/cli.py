@@ -5,8 +5,8 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, dayjson, launchd
-from .adapters import all_adapters
+from . import config, dayjson, launchd, msgraph
+from .adapters import NotConfigured, all_adapters
 from .models import UTC, iso, parse_iso
 from .report import day_bounds, render
 from .rules import DEFAULT_RULES, Rules
@@ -52,6 +52,7 @@ def cmd_sync(args) -> None:
         elif r.ok and not args.quiet:
             extra = f", {r.dropped} dropped" if r.dropped else ""
             extra += f", {r.purged} raw purged" if r.purged else ""
+            extra += f", {r.removed} removed" if r.removed else ""
             print(f"{r.source:<14} {r.stored} events{extra}")
         elif not r.ok:
             print(f"{r.source:<14} FAILED {r.error}", file=sys.stderr)
@@ -106,6 +107,18 @@ def cmd_forget(args) -> None:
     print(f"deleted {store.delete_between(iso(start), iso(end))} events")
 
 
+def cmd_connect(args) -> None:
+    config.load_env()
+    print("Sign in with your Illinois Microsoft account. daytrace asks only for read-only access to your")
+    print("calendar and email metadata (subjects, times, sender domains), never message bodies.\n")
+    msgraph.connect()
+    print("\nConnected. Run `daytrace sync` to collect your calendar and email.")
+
+
+def cmd_disconnect(args) -> None:
+    print("signed out" if msgraph.disconnect() else "wasn't signed in")
+
+
 def cmd_agent(args) -> None:
     if args.action == "install":
         print(f"installed {launchd.install(args.interval * 60)}")
@@ -141,6 +154,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("end", help="YYYY-MM-DD, inclusive")
     p.set_defaults(func=cmd_forget)
 
+    p = sub.add_parser("connect", help="sign in to a service that needs it")
+    p.add_argument("service", choices=["outlook"])
+    p.set_defaults(func=cmd_connect)
+
+    p = sub.add_parser("disconnect", help="forget a service's sign-in")
+    p.add_argument("service", choices=["outlook"])
+    p.set_defaults(func=cmd_disconnect)
+
     p = sub.add_parser("agent", help="install or remove the background sync agent")
     p.add_argument("action", choices=["install", "uninstall"])
     p.add_argument("--interval", type=int, default=10, help="minutes between syncs")
@@ -149,7 +170,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         args.func(args)
-    except NotInitialized as exc:
+    except (NotInitialized, NotConfigured, RuntimeError) as exc:
         sys.exit(f"daytrace: {exc}")
 
 

@@ -25,5 +25,7 @@ def all_adapters(rules: Rules) -> list[Adapter]:
     from .confluence import Confluence
     from .git import Git
     from .github import GitHub
+    from .outlook import OutlookCalendar, OutlookMail
 
-    return [ActivityWatch(), Git(rules), ClaudeCode(), GitHub(rules.personal_owners), Confluence()]
+    return [ActivityWatch(), Git(rules), ClaudeCode(), GitHub(rules.personal_owners), Confluence(),
+            OutlookCalendar(), OutlookMail()]

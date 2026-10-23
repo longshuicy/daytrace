@@ -89,6 +89,16 @@ class Store:
             found.update(r[0] for r in rows)
         return found
 
+    def replace_window(self, source: str, start: str, end: str, keep_ids: set[str]) -> int:
+        """Delete this source's events starting in [start, end) that are not in keep_ids."""
+        rows = self.conn.execute(
+            "SELECT id FROM events WHERE source = ? AND start_at >= ? AND start_at < ?", (source, start, end)
+        ).fetchall()
+        stale = [r[0] for r in rows if r[0] not in keep_ids]
+        with self.conn:
+            self.conn.executemany("DELETE FROM events WHERE id = ?", [(i,) for i in stale])
+        return len(stale)
+
     def delete_between(self, start: str, end: str) -> int:
         with self.conn:
             cur = self.conn.execute(

@@ -42,7 +42,11 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
           day_zero: datetime, now: datetime) -> dict:
     start, end = day_bounds(day)
     spans, points, idle = [], [], []
+    received = 0
     for r in rows:
+        if r["category"] == "inbox":  # received mail is context, counted but not drawn
+            received += r["sensitivity"] == "work"
+            continue
         if r["end_at"]:
             s, e = max(parse_iso(r["start_at"]), start), min(parse_iso(r["end_at"]), end)
             if e <= s:
@@ -54,7 +58,9 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
         else:
             points.append(r)
 
-    blocks = _blocks(spans)
+    blocks = _blocks(spans)  # drawn in full, including meetings later today
+    # Stats only count what has happened: scheduled time after now is not time spent.
+    spans = [(r, s, min(e, now)) for r, s, e in spans if min(e, now) > s]
     work = [(s, e) for r, s, e in spans if r["sensitivity"] == "work"]
     by_group, by_project = defaultdict(list), defaultdict(list)
     for r, s, e in spans:
@@ -71,6 +77,8 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
     projects = sorted(set(by_project) | set(project_points),
                       key=lambda p: (-total(by_project.get(p, [])), p))
     longest = _longest_stretch(spans)
+    # Meetings come from the calendar; Zoom windows seen by ActivityWatch would double count.
+    calendar = [(s, e) for r, s, e in spans if r["kind"] == "plan" and r["sensitivity"] == "work"]
     active = [(s, e) for _, s, e in spans] + [(parse_iso(p["start_at"]),) * 2 for p in points]
 
     summary = {
@@ -93,6 +101,9 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "commits": point_counts["commit"], "prs": point_counts["pr"],
             "reviews": point_counts["review"], "pushes": point_counts["push"],
             "wiki": point_counts["wiki"], "issues": point_counts["issue"],
+            "meetings": len(calendar),
+            "meeting_min": _minutes(total(calendar)),
+            "emails_sent": point_counts["email"], "emails_received": received,
         },
     }
     return {
@@ -176,7 +187,7 @@ def pill_line(summary: dict) -> str:
     if summary["longest"] and summary["longest"]["minutes"] >= 10:
         parts.append(f"longest {fmt_minutes(summary['longest']['minutes'])} on {summary['longest']['project']}")
     c = summary["counts"]
-    for key, word in (("commits", "commit"), ("prs", "PR"), ("wiki", "wiki edit")):
+    for key, word in (("meetings", "meeting"), ("commits", "commit"), ("prs", "PR"), ("wiki", "wiki edit")):
         if c[key]:
             parts.append(f"{c[key]} {word}{'s' * (c[key] != 1)}")
     return " · ".join(parts) or "Nothing recorded yet today"
