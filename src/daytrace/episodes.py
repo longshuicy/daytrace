@@ -6,6 +6,7 @@ else clusters per project (or per activity group when there's no project) with g
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
@@ -18,6 +19,15 @@ GAP = timedelta(minutes=10)
 MAX_TITLES = 6
 ENTRY_TITLES = 3
 MIN_ENTRY_MINUTES = 2
+# Slack's own views; any other Slack window that isn't a channel may name a person.
+SLACK_VIEWS = {"activity", "threads", "later", "home", "dms", "mentions & reactions", "saved items", "drafts & sent",
+               "search", "huddles", "canvases", "files", "people", "channels"}
+_NEW_ITEMS = re.compile(r"^\d+ new items?$")
+# Outlook and Teams views and folders; any other window of theirs may name a person (a message, a chat).
+OUTLOOK_VIEWS = {"inbox", "sent items", "sent", "drafts", "archive", "deleted items", "junk email", "outbox",
+                 "calendar", "people", "contacts", "tasks", "to do", "notes", "search", "mail"}
+TEAMS_VIEWS = {"activity", "chat", "teams", "calendar", "calls", "files", "apps", "assignments", "onedrive",
+               "communities", "search"}
 # Traces whose titles say what was done; they come before window titles when picking an entry's titles.
 SUBJECTS = ("commit", "pr", "review", "issue", "wiki", "release")
 
@@ -79,10 +89,12 @@ def _episode(kind: str, name: str | None, items: list) -> dict:
             sites[attrs["site"]].append((s, e))
         if r["title"] and r["category"] in SUBJECTS and r["title"] not in subjects:
             subjects.append(r["title"])
-        elif r["title"] and not attrs.get("site"):  # page titles stay local; only the site name is used
-            titles[r["title"]] += max((e - s).total_seconds(), 60)  # points weigh like a minute
+        elif r["title"] and not attrs.get("site") and r["category"] != "browse":  # page titles stay local
+            title = lumen_title(r, attrs)
+            if title:
+                titles[title] += max((e - s).total_seconds(), 60)  # points weigh like a minute
     project = name if kind == "project" else None
-    group = name if kind == "activity" else ("coord" if kind == "meeting" else None)
+    group = name if kind == "activity" else ("meeting" if kind == "meeting" else None)
     ident = hashlib.sha1(f"{iso(s0)}|{kind}|{name}".encode()).hexdigest()[:12]
     return {
         "id": ident,
@@ -102,6 +114,51 @@ def _episode(kind: str, name: str | None, items: list) -> dict:
         "event_ids": [r["id"] for _, _, r in items],
         "_length": max(e0 - s0, total(merge(spans))),
     }
+
+
+def lumen_title(r, attrs: dict) -> str | None:
+    """A window or trace title as Lumen may see it: no people's names. None leaves nothing."""
+    title, app = r["title"], attrs.get("app")
+    if r["source"] == "outlook_mail":
+        return None  # sent-mail subjects are free text; Lumen gets the count
+    if attrs.get("lumen_title"):
+        return attrs["lumen_title"]  # a calendar subject with attendee names taken out
+    if app == "Slack":
+        return slack_title(title)
+    if app == "Microsoft Teams" or title.endswith("Microsoft Teams"):
+        return app_view(title, " | ", TEAMS_VIEWS, "Microsoft Teams")
+    if app == "Microsoft Outlook" or r["category"] == "email":
+        return app_view(title, None, OUTLOOK_VIEWS, "Outlook")
+    return title
+
+
+def app_view(title: str, sep: str | None, views: set[str], name: str) -> str:
+    """"Chat | Alex | Microsoft Teams" -> "Microsoft Teams - Chat"; "Inbox • me@x" -> "Outlook - Inbox"."""
+    first = re.split(r"\s+[|•·\-–—]\s+", title)[0].strip() if sep is None else title.split(sep)[0].strip()
+    return f"{name} - {first}" if first.lower() in views else name
+
+
+def slack_title(title: str) -> str:
+    """A Slack window title without people's names: "Alex (DM) - NCSA - Slack" -> "Direct message - NCSA".
+
+    Channels and Slack's own views keep their names; anything else keeps only the workspace.
+    """
+    parts = [p.strip() for p in title.split(" - ")]
+    if parts and parts[-1] == "Slack":
+        parts.pop()
+    parts = [p for p in parts if not _NEW_ITEMS.match(p)]
+    if not parts:
+        return "Slack"
+    first, workspace = parts[0].lstrip("* ").strip(), parts[1:]
+    if first.endswith("(Channel)"):
+        what = "#" + first.removesuffix("(Channel)").strip()
+    elif first.lower() in SLACK_VIEWS:
+        what = first
+    elif first.endswith("(DM)"):
+        what = "Direct message"
+    else:
+        what = "Slack"
+    return " - ".join([what, *workspace[:1]])
 
 
 def details(ep: dict) -> str:

@@ -160,6 +160,9 @@ Per day / week:
 
 - *Day narrative*: one paragraph + 2–4 themes, given per-project entries + stats. No per-entry labels. The prompt
   forbids inventing time spent, and names meetings without saying what happened in them.
+- *Week / month narrative*: the same shape, from the days' already-gated payloads merged per project (days it
+  appeared, summed minutes and counts, up to three titles). Per-day totals replace time ranges; private time is
+  one total. Withheld once any event it used turns private.
 
 All outputs are stored with `evidence = 'inferred'`, the model name, and the episode/event ids used.
 

@@ -3,11 +3,15 @@
 What can leave: one entry per project (time ranges, activity minutes, counts, up to three scrubbed titles, site
 names, branch names), totals for what was too short to list, and day-level counts. Private time leaves only as
 {"start", "end", "minutes"}. Nothing else: no page titles.
+
+A week or month is built only from day payloads that already passed this gate, and leaves less: per-day
+totals instead of time ranges, and private time as one total.
 """
 
 import json
 import os
 import re
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +23,9 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 
 ENTRY_FIELDS = ("key", "kind", "project", "group", "times", "minutes", "activities", "counts", "titles", "sites",
                 "branches")
+PERIOD_ENTRY_FIELDS = ("key", "kind", "project", "group", "days", "minutes", "activities", "counts", "titles",
+                       "sites", "branches")
+PERIOD_TITLES, PERIOD_MEETING_TITLES, PERIOD_SITES = 3, 8, 5
 STAT_FIELDS = ("active_min", "meetings", "meeting_min", "emails_sent", "emails_received", "commits", "prs",
                "reviews", "pushes", "wiki", "issues", "first", "last", "longest")
 
@@ -61,6 +68,52 @@ def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
         "entries": items,
         "also": also,
         "private": [{"start": _clock(s), "end": _clock(e), "minutes": m} for s, e, m in private],
+    }
+    check(payload)
+    return payload
+
+
+def build_period_payload(label: str, days: list[dict]) -> dict:
+    """label: "week of ..." or "October 2026"; days: build_payload results for the days that have data."""
+    entries, stats, also = {}, Counter(), Counter()
+    longest, private, per_day = None, 0, []
+    for d in days:
+        when = d["date"].split()[0][:3] + " " + d["date"].split()[1][5:]  # "Thursday 2026-10-22" -> "Thu 10-22"
+        st = d["stats"]
+        per_day.append({"date": when, "active_min": st.get("active_min"), "meeting_min": st.get("meeting_min"),
+                        "first": st.get("first"), "last": st.get("last")})
+        stats.update({k: v for k, v in st.items() if isinstance(v, int) and k != "active_min"})
+        stats["active_min"] += st.get("active_min") or 0
+        if st.get("longest") and (longest is None or st["longest"]["minutes"] > longest["minutes"]):
+            longest = {**st["longest"], "day": when}
+        also.update(d["also"])
+        private += sum(p["minutes"] for p in d["private"])
+        for item in d["entries"]:
+            en = entries.setdefault(item["key"], {
+                "key": item["key"], "kind": item["kind"], "project": item["project"], "group": item["group"],
+                "days": [], "minutes": 0, "activities": Counter(), "counts": Counter(), "titles": [],
+                "sites": Counter(), "branches": [],
+            })
+            en["days"].append(when)
+            en["minutes"] += item["minutes"]
+            en["activities"].update(item["activities"])
+            en["counts"].update(item["counts"])
+            en["titles"] += [t for t in item["titles"] if t not in en["titles"]]
+            en["sites"].update(item["sites"])
+            en["branches"] += [b for b in item["branches"] if b not in en["branches"]]
+    items = []
+    for en in sorted(entries.values(), key=lambda en: -en["minutes"]):
+        limit = PERIOD_MEETING_TITLES if en["kind"] == "meeting" else PERIOD_TITLES
+        en.update(activities=dict(en["activities"]), counts=dict(en["counts"]), titles=en["titles"][:limit],
+                  sites=dict(en["sites"].most_common(PERIOD_SITES)), branches=en["branches"][:3])
+        items.append({k: en[k] for k in PERIOD_ENTRY_FIELDS})
+    payload = {
+        "period": label,
+        "stats": {**{k: stats[k] for k in STAT_FIELDS if k in stats}, "days_with_data": len(days), "longest": longest},
+        "days": per_day,
+        "entries": items,
+        "also": dict(also),
+        "private": {"minutes": private},
     }
     check(payload)
     return payload

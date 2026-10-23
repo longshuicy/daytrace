@@ -1,53 +1,99 @@
 import { listen } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
 import { syncNow, useDay } from "../api";
 import {
   GROUP_LABEL, LANES, SOURCE_LABEL, clock, colorVar, longDate, minutes, shiftDate, today,
 } from "../format";
-import type { Day } from "../types";
+import type { Day, PeriodKind } from "../types";
+import DatePicker from "./DatePicker";
 import DayClock from "./DayClock";
+import { Change, ProjectsAndSites, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
+import PeriodView, { periodLabel, shiftPeriod } from "./PeriodView";
 import Story from "./Story";
 import Timeline from "./Timeline";
 import { Tooltip, useTooltip } from "./Tooltip";
 import "./dayview.css";
 
+type Mode = "day" | PeriodKind;
+const MODES: [Mode, string][] = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
+
+/** The main window: one day, or the week or month around the chosen date. */
 export default function DayView() {
   const [date, setDate] = useState(today());
-  const { day, error, syncing } = useDay(date);
-  const [fullDay, setFullDay] = useState(false);
-  const [view, setView] = useState<View>("timeline");
+  const [mode, setMode] = useState<Mode>("day");
   const tooltip = useTooltip();
 
   useEffect(() => {
-    const off = listen<string>("open-date", (e) => setDate(e.payload));
+    const off = listen<string>("open-date", (e) => { setDate(e.payload); setMode("day"); });
     return () => { off.then((f) => f()); };
   }, []);
 
-  const isToday = date === today();
+  const openDay = (d: string) => { setDate(d); setMode("day"); };
 
   return (
     <div className="dayview" onScroll={tooltip.hide}>
-      <header className="titlebar" data-tauri-drag-region>
-        <div className="nav" data-tauri-drag-region>
-          <button onClick={() => setDate(shiftDate(date, -1))} aria-label="Previous day">‹</button>
-          <button onClick={() => setDate(today())} disabled={isToday}>Today</button>
-          <button onClick={() => setDate(shiftDate(date, 1))} disabled={isToday} aria-label="Next day">›</button>
-        </div>
-        <button className="sync" onClick={() => syncNow()} disabled={syncing}>
-          {syncing ? "Syncing…" : "Sync now"}
-        </button>
-      </header>
-
+      <Titlebar mode={mode} setMode={setMode} date={date} setDate={setDate} />
       <main>
-        <h1>{longDate(date)}</h1>
-        {error && <div className="notice error">Couldn't load this day: {error}</div>}
-        {day && <SyncAlert day={day} />}
-        {day && <Body day={day} fullDay={fullDay} setFullDay={setFullDay} view={view} setView={setView}
-          tooltip={tooltip} />}
+        {mode === "day" ? <DayBody date={date} tooltip={tooltip} />
+          : <PeriodView kind={mode} date={date} openDay={openDay} />}
       </main>
       <Tooltip tip={tooltip.tip} />
     </div>
+  );
+}
+
+function Titlebar({ mode, setMode, date, setDate }:
+  { mode: Mode; setMode: (m: Mode) => void; date: string; setDate: (d: string) => void }) {
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => {
+    const offs = [listen("syncing", () => setSyncing(true)), listen("synced", () => setSyncing(false))];
+    return () => offs.forEach((p) => p.then((off) => off()));
+  }, []);
+
+  const now = today();
+  const shift = (n: number) => (mode === "day" ? shiftDate(date, n) : shiftPeriod(mode, date, n));
+  // The next day / week / month starts after today: nothing to show yet.
+  const atEnd = mode === "day" ? date >= now : shiftPeriod(mode, date, 1) > now;
+  const unit = mode === "day" ? "day" : mode;
+
+  return (
+    <header className="titlebar" data-tauri-drag-region>
+      <div className="nav" data-tauri-drag-region>
+        <button className="step" onClick={() => setDate(shift(-1))} aria-label={`Previous ${unit}`}>‹</button>
+        <DatePicker date={date} onChange={setDate} label={mode === "day" ? undefined : periodLabel(mode, date)}
+          initialMode={mode === "month" ? "month" : "day"} />
+        <button className="step" onClick={() => setDate(shift(1))} disabled={atEnd} aria-label={`Next ${unit}`}>›</button>
+        {(mode === "day" ? date !== now : !atEnd) && (
+          <button className="plain back" onClick={() => setDate(now)}>Back to {mode === "day" ? "today" : `this ${mode}`}</button>
+        )}
+      </div>
+      <div className="nav">
+        <div className="segmented" role="tablist" aria-label="Period">
+          {MODES.map(([key, text]) => (
+            <button key={key} role="tab" aria-selected={mode === key} className={mode === key ? "on" : undefined}
+              onClick={() => setMode(key)}>{text}</button>
+          ))}
+        </div>
+        <button className="sync" onClick={() => syncNow()} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
+      </div>
+    </header>
+  );
+}
+
+function DayBody({ date, tooltip }: { date: string; tooltip: ReturnType<typeof useTooltip> }) {
+  const { day, error } = useDay(date);
+  const [fullDay, setFullDay] = useState(false);
+  const [view, setView] = useState<View>("timeline");
+  return (
+    <>
+      <header className="day-head">
+        <h1>{longDate(date)}</h1>
+        {day && !day.before_tracking && <p className="line">{day.line}</p>}
+      </header>
+      {error && <div className="notice error">Couldn't load this day: {error}</div>}
+      {day && <SyncAlert day={day} />}
+      {day && <Body day={day} fullDay={fullDay} setFullDay={setFullDay} view={view} setView={setView} tooltip={tooltip} />}
+    </>
   );
 }
 
@@ -65,26 +111,40 @@ interface BodyProps {
 
 function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
   const s = day.summary;
+  const h = day.highlights;
   if (day.before_tracking) {
     return <div className="notice">Tracking started {new Date(day.day_zero).toLocaleString()}. Nothing is recorded before that.</div>;
   }
   return (
     <>
-      <p className="line">{day.line}</p>
-
       <Story day={day} />
 
-      <section className="overview">
-        <Tile label="Active" value={minutes(s.active_min)} hero
+      <section className="g5">
+        <Tile label="Active" value={minutes(s.active_min)}
           note={s.first ? `${clock(s.first)}–${clock(s.last!)}${s.groups.other ? ` · incl. ${minutes(s.groups.other)} other` : ""}`
             : "no activity yet"} />
         <Tile label="Meetings" value={minutes(s.counts.meeting_min)}
           note={s.counts.meetings ? `${s.counts.meetings} meeting${s.counts.meetings === 1 ? "" : "s"}` : "none on your calendar"} />
         <Tile label="Email sent" value={String(s.counts.emails_sent)} note={`${s.counts.emails_received} received`} />
+        {h.focus && h.focus.minutes >= 10
+          ? <Tile label="Longest focus" value={minutes(h.focus.minutes)}
+            note={`${h.focus.label} · ${clock(h.focus.start)}–${clock(h.focus.end)}`} />
+          : <Tile label="Longest focus" value="—" note="no stretch of 10 minutes yet" />}
+        {h.biggest
+          ? <Tile label="Biggest change" value={<Change {...h.biggest} />}
+            note={[`${h.biggest.files} file${h.biggest.files === 1 ? "" : "s"}`, h.biggest.project].filter(Boolean).join(" · ")}
+            extra={h.biggest.title} />
+          : <Tile label="Biggest change" value="—" note="no commits yet" />}
       </section>
-      <Highlights day={day} />
 
-      <section className="card">
+      {(h.shipped.length > 0 || h.working_on.length > 0) && (
+        <section className="g2">
+          {h.shipped.length > 0 && <ShippedCard items={h.shipped} />}
+          {h.working_on.length > 0 && <WorkingOnCard label="Working on" items={h.working_on} />}
+        </section>
+      )}
+
+      <section className="card activity" aria-label="Activity">
         <div className="card-head">
           <div className="segmented" role="tablist" aria-label="Activity view">
             {VIEWS.map(([key, label]) => (
@@ -115,14 +175,7 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
         {view === "table" && <EventTable day={day} />}
       </section>
 
-      <section className="card">
-        <h2>Projects</h2>
-        <Projects day={day} />
-      </section>
-      <section className="card">
-        <h2>Top sites</h2>
-        <Sites day={day} />
-      </section>
+      <ProjectsAndSites projects={s.projects} sites={day.sites} />
     </>
   );
 }
@@ -139,145 +192,6 @@ function SyncAlert({ day }: { day: Day }) {
         <div key={src.name} className="muted error-detail">{SOURCE_LABEL[src.name] ?? src.name}: {src.error}</div>
       ))}
     </div>
-  );
-}
-
-type Dir = 1 | -1;
-
-/** Click a header to sort by it; click again to reverse. */
-function useSort<K extends string>(initial: K, initialDir: Dir = 1) {
-  const [sort, setSort] = useState<{ key: K; dir: Dir }>({ key: initial, dir: initialDir });
-  const header = (key: K, label: string, className?: string, firstDir: Dir = 1) => (
-    <th className={className} aria-sort={sort.key === key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
-      <button className="sort" onClick={() => setSort(sort.key === key ? { key, dir: -sort.dir as Dir } : { key, dir: firstDir })}>
-        {label}<span className="sort-mark">{sort.key === key ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
-      </button>
-    </th>
-  );
-  const sorted = <T,>(rows: T[], value: (row: T, key: K) => string | number) =>
-    [...rows].sort((a, b) => {
-      const x = value(a, sort.key), y = value(b, sort.key);
-      return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
-    });
-  return { header, sorted };
-}
-
-const SHOWN = 3;
-
-/** One column per highlight, each a short list; long lists end in "+N more". */
-function Highlights({ day }: { day: Day }) {
-  const h = day.highlights;
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  const columns = [
-    h.shipped.length > 0 && (
-      <HighlightColumn key="shipped" label="Shipped" more={h.shipped.length - SHOWN}>
-        {h.shipped.slice(0, SHOWN).map((x, i) => (
-          <li key={i} title={x.title}>
-            {x.url ? <button className="link hl-main" onClick={() => openUrl(x.url!)}>{x.title}</button>
-              : <span className="hl-main">{x.title}</span>}
-            {x.project && <span className="hl-sub">{x.project}</span>}
-          </li>
-        ))}
-      </HighlightColumn>
-    ),
-    h.biggest && (
-      <HighlightColumn key="biggest" label="Biggest change">
-        <li title={h.biggest.title}>
-          <span className="hl-main tabular">+{h.biggest.insertions} −{h.biggest.deletions} · {plural(h.biggest.files, "file")}</span>
-          <span className="hl-sub">{[h.biggest.project, h.biggest.title].filter(Boolean).join(" · ")}</span>
-        </li>
-      </HighlightColumn>
-    ),
-    h.working_on.length > 0 && (
-      <HighlightColumn key="working" label="Working on" more={h.working_on.length - SHOWN}>
-        {h.working_on.slice(0, SHOWN).map((w) => (
-          <li key={`${w.project}/${w.branch}`} title={w.branch}>
-            <code className="hl-main branch">{w.branch}</code>
-            <span className="hl-sub tabular">{[w.project, minutes(w.minutes)].filter(Boolean).join(" · ")}</span>
-          </li>
-        ))}
-      </HighlightColumn>
-    ),
-    h.focus && h.focus.minutes >= 10 && (
-      <HighlightColumn key="focus" label="Longest focus">
-        <li title={h.focus.label}>
-          <span className="hl-main tabular">{minutes(h.focus.minutes)}</span>
-          <span className="hl-sub tabular">{h.focus.label} · {clock(h.focus.start)}–{clock(h.focus.end)}</span>
-        </li>
-      </HighlightColumn>
-    ),
-  ].filter(Boolean);
-  if (!columns.length) return null;
-  return <section className="highlights">{columns}</section>;
-}
-
-function HighlightColumn({ label, more = 0, children }: { label: string; more?: number; children: React.ReactNode }) {
-  return (
-    <div className="tile">
-      <div className="tile-label">{label}</div>
-      <ul>{children}</ul>
-      {more > 0 && <div className="tile-note">+{more} more</div>}
-    </div>
-  );
-}
-
-function Tile({ label, value, note, hero }: { label: string; value: string; note: string; hero?: boolean }) {
-  return (
-    <div className={`tile${hero ? " hero" : ""}`}>
-      <div className="tile-label">{label}</div>
-      <div className="tile-value">{value}</div>
-      <div className="tile-note">{note}</div>
-    </div>
-  );
-}
-
-function Projects({ day }: { day: Day }) {
-  const { header, sorted } = useSort<"project" | "minutes" | "commits" | "prs">("minutes", -1);
-  const rows = day.summary.projects;
-  if (!rows.length) return <div className="empty">No projects yet.</div>;
-  const max = Math.max(...rows.map((r) => r.minutes), 1);
-  return (
-    <table className="projects">
-      <thead>
-        <tr>
-          {header("project", "Project")}{header("minutes", "Time", "bar-col", -1)}
-          {header("commits", "Commits", "num", -1)}{header("prs", "PRs", "num", -1)}
-        </tr>
-      </thead>
-      <tbody>
-        {sorted(rows, (r, k) => (k === "project" ? r.project.toLowerCase() : r[k])).map((r) => (
-          <tr key={r.project}>
-            <td>{r.project}</td>
-            <td className="bar-col">
-              <span className="bar" style={{ width: `${(r.minutes / max) * 100}%` }} />
-              <span className="tabular">{minutes(r.minutes)}</span>
-            </td>
-            <td className="num tabular">{r.commits || ""}</td>
-            <td className="num tabular">{r.prs || ""}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function Sites({ day }: { day: Day }) {
-  if (!day.sites.length) return <div className="empty">No browsing recorded yet.</div>;
-  const max = Math.max(...day.sites.map((s) => s.minutes), 1);
-  return (
-    <table className="projects">
-      <tbody>
-        {day.sites.map((s) => (
-          <tr key={s.site ?? "_other"}>
-            <td className={s.site ? undefined : "muted"}>{s.site ?? "Other pages"}</td>
-            <td className="bar-col">
-              <span className="bar" style={{ width: `${(s.minutes / max) * 100}%`, background: colorVar("browse") }} />
-              <span className="tabular">{minutes(s.minutes)}</span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 

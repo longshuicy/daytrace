@@ -61,10 +61,18 @@ What leaves the machine: episodes (local times, project, minutes per activity, c
 scrubbed titles, branch names) and day counts. Private time leaves only as bare time ranges. Every request
 (and reply) is saved under `~/.daytrace/audit/<date>/` before anything is sent.
 
+`daytrace summarize --period week|month [--date D] [--send]` does the same for the week (Sunday to Saturday)
+or month around a date. It is built only from each day's gated request, and sends less: per-day totals
+instead of time ranges, private time as one total. Audits go to `~/.daytrace/audit/week-<sunday>/` or
+`month-<YYYY-MM>/`. Browser page titles never leave, even when no site name can be read from them, and Slack windows leave as
+the channel or view name only (a DM is just "Direct message"). Outlook and Teams windows leave as a folder or
+view name ("Inbox", "Chat") or just the app name; sent-mail subjects don't leave at all (only the count); and
+meeting titles leave with the invite's attendee and organizer names replaced by "[person]".
+
 ## Desktop app
 
 `app/` is a Tauri app: a menu-bar icon, a small always-on-top day clock in the bottom-right corner, and a day
-view (Lumen's summary, a timeline you can switch to a day clock or a sortable table, projects, top sites, and an
+view with Day / Week / Month (Lumen's summary, a timeline you can switch to a day clock or a sortable table, projects, top sites, and an
 alert when a source fails to sync). It reads data through
 `daytrace day --json`, so it needs the CLI installed (`~/.local/bin/daytrace`, or set `DAYTRACE_BIN`).
 
@@ -79,6 +87,7 @@ npx tauri dev            # run with hot reload
 Drag the floating clock to move it, click it to open the day view. Closing windows hides them; quit from the menu-bar icon.
 
 UI-only preview in a browser, with no Rust build: `daytrace day --json > app/dev/dev-day.json`, then
+`daytrace period week > app/dev/dev-week.json` (same for `month`), then
 `npm --prefix app run dev` and open http://localhost:1420 (add `?window=pill` for the pill). `app/dev/` is
 gitignored.
 

@@ -51,6 +51,20 @@ async fn day(date: Option<String>) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+async fn period(kind: String, date: Option<String>) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut args = vec!["period", kind.as_str()];
+        if let Some(d) = date.as_deref() {
+            args.extend(["--date", d]);
+        }
+        let text = run_daytrace(&args)?;
+        serde_json::from_str(&text).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn sync_now(app: AppHandle) -> Result<String, String> {
     let _ = app.emit("syncing", ());
     let result = tauri::async_runtime::spawn_blocking(|| run_daytrace(&["sync"]))
@@ -61,11 +75,19 @@ async fn sync_now(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn summarize(app: AppHandle, date: Option<String>, send: bool) -> Result<String, String> {
+async fn summarize(
+    app: AppHandle,
+    date: Option<String>,
+    send: bool,
+    period: Option<String>,
+) -> Result<String, String> {
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut args = vec!["summarize"];
         if let Some(d) = date.as_deref() {
             args.extend(["--date", d]);
+        }
+        if let Some(p) = period.as_deref() {
+            args.extend(["--period", p]);
         }
         if send {
             args.push("--send");
@@ -119,7 +141,7 @@ fn place_pill(app: &AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![day, sync_now, summarize, show_day])
+        .invoke_handler(tauri::generate_handler![day, period, sync_now, summarize, show_day])
         .setup(|app| {
             // Menu-bar app: no Dock icon.
             #[cfg(target_os = "macos")]

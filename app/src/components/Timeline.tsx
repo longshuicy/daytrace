@@ -6,12 +6,15 @@ import type { Block, Day, GroupKey } from "../types";
 import { BlockDetail, PointDetail } from "./details";
 import type { useTooltip } from "./Tooltip";
 
-const LABEL_W = 128;
-const LANE_H = 26;
-const BAR_H = 12;
-const AXIS_H = 22;
+const LABEL_W = 150;
+const LANE_H = 36;
+const BAR_H = 14;
+const AXIS_H = 28;
+const NOW_H = 22;  // room under the lanes for the "now" label
 const BRIDGE_MIN = 3;  // bars in one lane closer than this (or 4px) are drawn as one stretch
 const DONE = "done" as const;
+const WORK_START = 8;  // default window, hours
+const WORK_END = 18;
 
 type Row = GroupKey | typeof DONE;
 
@@ -73,84 +76,83 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
   }, []);
 
   const done = day.points.filter((p) => p.sensitivity !== "private");
-  const lanes: Row[] = [
-    ...(done.length ? [DONE] : []),
-    ...LANES.filter((g) => day.blocks.some((b) => b.group === g)),
-  ];
   const dayStart = new Date(day.start);
   const dayEnd = new Date(day.end);
   const now = new Date(day.now);
   const isToday = now >= dayStart && now < dayEnd;
 
-  let from = dayStart;
-  let to = dayEnd;
-  if (!fullDay) {
-    const first = day.summary.first ? new Date(day.summary.first) : now;
-    const last = day.summary.last ? new Date(isToday ? Math.max(+new Date(day.summary.last), +now) : day.summary.last) : now;
-    from = timeHour.floor(new Date(Math.min(+first, +new Date(dayStart).setHours(8))));
-    to = timeHour.ceil(new Date(Math.max(+last, +new Date(dayStart).setHours(18))));
-    from = new Date(Math.max(+from, +dayStart));
-    to = new Date(Math.min(+to, +dayEnd));
-  }
-  const plotW = Math.max(200, width - LABEL_W - 8);
+  // Work hours (08–18) unless the full day is asked for; anything outside the window is left out.
+  const from = fullDay ? dayStart : new Date(Math.max(+new Date(dayStart).setHours(WORK_START), +dayStart));
+  const to = fullDay ? dayEnd : new Date(Math.min(+new Date(dayStart).setHours(WORK_END), +dayEnd));
+  const inView = (s: string, e: string = s) => +new Date(e) >= +from && +new Date(s) <= +to;
+  const plotW = Math.max(670, width - LABEL_W - 14);
   const x = scaleTime().domain([from, to]).range([0, plotW]).clamp(true);
   const hours = (to.getTime() - from.getTime()) / 3_600_000;
   const ticks = x.ticks(timeHour.every(hours > 14 || plotW < 640 ? 2 : 1)!);
-  const height = AXIS_H + lanes.length * LANE_H + 4;
-  const laneY = (g: Row) => AXIS_H + lanes.indexOf(g) * LANE_H;
   const bridgeMs = Math.max(BRIDGE_MIN * 60_000, x.invert(4).getTime() - x.invert(0).getTime());
-  const bars = LANES.flatMap((g) => stretches(day.blocks.filter((b) => b.group === g), bridgeMs));
-  const faded = (g: Row) => g === "other" || g === "private";
+  const bars = LANES.flatMap((g) => stretches(day.blocks.filter((b) => b.group === g), bridgeMs))
+    .filter((b) => inView(b.start, b.end));
+  const shown = done.filter((p) => inView(p.at));
+  // Only lanes with something in the window, so a quiet lane doesn't sit empty at work hours.
+  const lanes: Row[] = [
+    ...(shown.length ? [DONE] : []),
+    ...LANES.filter((g) => bars.some((b) => b.group === g)),
+  ];
+  const lanesBottom = AXIS_H + lanes.length * LANE_H;
+  const height = lanesBottom + NOW_H;
+  const laneY = (g: Row) => AXIS_H + lanes.indexOf(g) * LANE_H;
 
   return (
     <div ref={ref} className="timeline">
       {lanes.length === 0 ? (
-        <div className="empty">No traces for this day.</div>
+        <div className="empty">
+          {fullDay || !(day.blocks.length || done.length) ? "No traces for this day." : `Nothing between ${WORK_START}:00 and ${WORK_END}:00. Turn on Full 24 hours to see the rest.`}
+        </div>
       ) : (
-        <svg width={width} height={height} role="img" aria-label="Timeline of the day by activity">
+        <svg width={Math.max(width, LABEL_W + plotW + 14)} height={height} role="img" aria-label="Timeline of the day by activity">
           {lanes.map((g) => (
-            <g key={g} transform={`translate(0, ${laneY(g)})`} opacity={faded(g) ? 0.6 : 1}>
+            <g key={g} transform={`translate(0, ${laneY(g)})`}>
               {g === DONE
-                ? <circle cx={4} cy={LANE_H / 2} r={4} fill="var(--ink-2)" />
-                : <rect x={0} y={LANE_H / 2 - 4} width={8} height={8} rx={2} fill={colorVar(g)} />}
-              <text x={14} y={LANE_H / 2 + 4} className="lane-label">{g === DONE ? "Done" : GROUP_LABEL[g]}</text>
+                ? <circle cx={5} cy={LANE_H / 2} r={5} fill="var(--ink-2)" />
+                : <rect x={0} y={LANE_H / 2 - 5} width={10} height={10} rx={3} fill={colorVar(g)} />}
+              <text x={20} y={LANE_H / 2 + 5} className="lane-label">{g === DONE ? "Done" : GROUP_LABEL[g]}</text>
             </g>
           ))}
           <g transform={`translate(${LABEL_W}, 0)`}>
             {day.idle.map((iv, i) => (
-              <rect key={i} x={x(new Date(iv.start))} y={AXIS_H} height={height - AXIS_H}
-                width={Math.max(0, x(new Date(iv.end)) - x(new Date(iv.start)))} fill="var(--surface-2)">
+              <rect key={i} x={x(new Date(iv.start))} y={AXIS_H} height={lanesBottom - AXIS_H}
+                width={Math.max(0, x(new Date(iv.end)) - x(new Date(iv.start)))} fill="var(--ink)" fillOpacity={0.035}>
                 <title>Away from keyboard</title>
               </rect>
             ))}
             {ticks.map((t) => (
               <g key={+t} transform={`translate(${x(t)}, 0)`}>
-                <line y1={AXIS_H - 4} y2={height} stroke="var(--grid)" />
-                <text y={12} textAnchor="middle" className="axis-label tabular">
+                <line y1={AXIS_H} y2={lanesBottom} stroke="var(--grid)" />
+                <text y={16} textAnchor="middle" className="axis-label tabular">
                   {t.getHours().toString().padStart(2, "0")}
                 </text>
               </g>
             ))}
-            {done.length > 0 && (
-              <line x1={0} x2={plotW} y1={laneY(DONE) + LANE_H} y2={laneY(DONE) + LANE_H} stroke="var(--grid)" />
-            )}
+            {lanes.map((g) => (
+              <line key={g} x1={0} x2={plotW} y1={laneY(g) + LANE_H} y2={laneY(g) + LANE_H} stroke="var(--divider)" />
+            ))}
             {bars.map((b, i) => {
               const x0 = x(new Date(b.start));
               const w = Math.max(2, x(new Date(b.end)) - x0);
               const y = laneY(b.group) + (LANE_H - BAR_H) / 2;
               return (
                 <rect key={i} x={x0} y={y} width={w} height={BAR_H} rx={Math.min(4, w / 2)}
-                  fill={colorVar(b.group)} fillOpacity={faded(b.group) ? 0.4 : 1}
+                  fill={colorVar(b.group)}
                   onMouseMove={(e) => tooltip.show(e, <BlockDetail b={b} />)} onMouseLeave={tooltip.hide} />
               );
             })}
             {isToday && x(now) > 0 && x(now) < plotW && (
               <g transform={`translate(${x(now)}, 0)`}>
-                <line y1={AXIS_H - 6} y2={height} stroke="var(--ink)" strokeWidth={1.5} />
-                <text y={AXIS_H - 9} textAnchor="middle" className="now-label">now</text>
+                <line y1={AXIS_H - 4} y2={lanesBottom + 4} stroke="var(--ink)" strokeWidth={2} />
+                <text y={lanesBottom + 18} textAnchor="middle" className="now-label">now</text>
               </g>
             )}
-            {done.map((p, i) => {
+            {shown.map((p, i) => {
               const cx = x(new Date(p.at));
               const cy = laneY(DONE) + LANE_H / 2;
               return (
@@ -158,7 +160,7 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
                   onMouseMove={(e) => tooltip.show(e, <PointDetail p={p} />)} onMouseLeave={tooltip.hide}
                   onClick={() => p.url && openUrl(p.url)}>
                   <circle cx={cx} cy={cy} r={10} fill="transparent" />
-                  <circle cx={cx} cy={cy} r={4.5} fill={colorVar(p.group)} stroke="var(--surface)" strokeWidth={2} />
+                  <circle cx={cx} cy={cy} r={5} fill={colorVar(p.group)} />
                 </g>
               );
             })}

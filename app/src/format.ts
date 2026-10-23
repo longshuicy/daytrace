@@ -31,7 +31,8 @@ export function ago(iso: string, now = new Date()): string {
 }
 
 export const GROUP_LABEL: Record<GroupKey, string> = {
-  coord: "Meetings & mail",
+  meeting: "Meetings",
+  comms: "Mail & chat",
   code: "Coding",
   review: "Review & issues",
   writing: "Docs & wiki",
@@ -41,7 +42,7 @@ export const GROUP_LABEL: Record<GroupKey, string> = {
 };
 
 /** Lane order, top to bottom, following the palette order. */
-export const LANES: GroupKey[] = ["coord", "code", "review", "writing", "browse", "other", "private"];
+export const LANES: GroupKey[] = ["meeting", "comms", "code", "review", "writing", "browse", "other", "private"];
 
 export const colorVar = (g: GroupKey) => `var(--g-${g})`;
 

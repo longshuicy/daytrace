@@ -1,6 +1,6 @@
 // Shape of `daytrace day --json`. Times are local ISO strings with offset.
 
-export type GroupKey = "coord" | "code" | "review" | "writing" | "browse" | "other" | "private";
+export type GroupKey = "meeting" | "comms" | "code" | "review" | "writing" | "browse" | "other" | "private";
 export type Evidence = "observed" | "scheduled" | "recorded" | "inferred";
 export type Sensitivity = "normal" | "private";
 
@@ -110,4 +110,38 @@ export interface Focus {
   minutes: number;
   start: string;
   end: string;
+}
+
+export type PeriodKind = "week" | "month";
+
+/** One day of a week or month; days after today, or with nothing recorded, have has_data false. */
+export interface PeriodDay {
+  date: string;
+  future: boolean;
+  has_data: boolean;
+  active_min: number;
+  meeting_min: number;
+  emails_sent: number;
+  focus_min: number;
+}
+
+/** Shape of `daytrace period week|month`. */
+export interface Period {
+  start: string;
+  end: string;
+  today: string;
+  days: PeriodDay[];
+  elapsed: number;
+  line: string;
+  totals: {
+    active_min: number; avg_active_min: number; meeting_min: number; meetings: number;
+    emails_sent: number; emails_received: number;
+  };
+  focus: (Focus & { date: string }) | null;
+  biggest: (NonNullable<Highlights["biggest"]> & { date: string }) | null;
+  shipped: (Highlights["shipped"][number] & { date: string })[];
+  working_on: Highlights["working_on"];
+  projects: ProjectRow[];
+  sites: Site[];
+  story: Story | null;
 }

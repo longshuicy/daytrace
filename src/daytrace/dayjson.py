@@ -10,13 +10,15 @@ from .report import day_bounds, merge, total
 
 # Display groups, in fixed palette order. Categories not listed fall into "other"; private time is "private".
 GROUPS = [
-    ("coord", "Meetings & mail", {"meeting", "email", "chat"}),
+    ("meeting", "Meetings", {"meeting"}),
+    ("comms", "Mail & chat", {"email", "chat"}),
     ("code", "Coding", {"code", "terminal", "commit", "push", "ai"}),
     ("review", "Review & issues", {"pr", "review", "issue", "release", "repo"}),
     ("writing", "Docs & wiki", {"docs", "wiki"}),
     ("browse", "Browsing", {"browse"}),
 ]
 _GROUP_OF = {cat: key for key, _, cats in GROUPS for cat in cats}
+INTERRUPTS = ("meeting", "comms")  # groups that break a focus stretch
 BLOCK_GAP = timedelta(minutes=1)
 STRETCH_GAP = timedelta(minutes=5)
 INTERRUPTION = timedelta(minutes=2)  # meetings, mail, chat or private time at least this long break focus
@@ -127,9 +129,9 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "source": p["source"], "title": p["title"], "url": p["url"],
         } for p in points],
         "idle": [{"start": _local(s), "end": _local(e)} for s, e in merge(idle)],
-        "sites": _sites(spans),
+        "sites": sites(spans),
         "highlights": _highlights(points, spans, summary),
-        "story": _story(story),
+        "story": story_view(story),
     }
 
 
@@ -152,23 +154,27 @@ def _highlights(points: list, spans: list, summary: dict) -> dict:
     if biggest:
         del biggest["_size"]
 
+    return {
+        "shipped": shipped,
+        "biggest": biggest,
+        "working_on": working_on(spans)[:3],
+        "focus": summary["longest"],
+    }
+
+
+def working_on(spans: list) -> list[dict]:
+    """Feature branches Claude Code sessions were on, with time per (project, branch), most first."""
     branches = defaultdict(list)
     for r, s, e in spans:
         branch = json.loads(r["attrs"] or "{}").get("branch") if r["source"] == "claude_code" else None
         if branch and branch not in MAIN_BRANCHES and r["sensitivity"] != "private":
             branches[(r["project"], branch)].append((s, e))
-    working_on = sorted(({"project": p, "branch": b, "minutes": _minutes(total(v))} for (p, b), v in branches.items()),
-                        key=lambda w: -w["minutes"])[:3]
-
-    return {
-        "shipped": shipped,
-        "biggest": biggest,
-        "working_on": [w for w in working_on if w["minutes"]],
-        "focus": summary["longest"],
-    }
+    rows = sorted(({"project": p, "branch": b, "minutes": _minutes(total(v))} for (p, b), v in branches.items()),
+                  key=lambda w: -w["minutes"])
+    return [w for w in rows if w["minutes"]]
 
 
-def _sites(spans: list) -> list[dict]:
+def sites(spans: list) -> list[dict]:
     """Browser time per site, named from tab titles. Sites under two minutes are folded into "Other pages"."""
     by_site = defaultdict(list)
     for r, s, e in spans:
@@ -184,7 +190,7 @@ def _sites(spans: list) -> list[dict]:
     return out
 
 
-def _story(row: dict | None) -> dict | None:
+def story_view(row: dict | None) -> dict | None:
     if not row:
         return None
     stats = row["stats"]
@@ -237,7 +243,7 @@ def _longest_focus(spans: list, idle: list) -> dict | None:
     """
     work, breaks = [], [(s, e) for s, e in idle if e - s > AWAY]
     for r, s, e in spans:
-        if r["sensitivity"] == "private" or group_of(r["category"], r["sensitivity"]) == "coord":
+        if r["sensitivity"] == "private" or group_of(r["category"], r["sensitivity"]) in INTERRUPTS:
             if e - s >= INTERRUPTION:
                 breaks.append((s, e))
         else:

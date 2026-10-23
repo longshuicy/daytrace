@@ -133,7 +133,7 @@ def test_day_json_groups_stretch_and_line(tmp_path, rules, projects):
     # The 20-minute song (private) interrupts 9:00–9:20, so focus runs 9:20–10:13.
     longest = d["summary"]["longest"]
     assert (longest["label"], longest["kind"], longest["minutes"]) == ("pdg", "project", 53)
-    assert d["summary"]["groups"]["coord"] == 60 and d["summary"]["groups"]["private"] == 20 and d["summary"]["private_min"] == 20
+    assert d["summary"]["groups"]["meeting"] == 60 and d["summary"]["groups"]["private"] == 20 and d["summary"]["private_min"] == 20
     assert d["summary"]["active_min"] == 130  # 40 + 30 coding (gap excluded) + 60 meeting; the song overlaps
     assert d["summary"]["groups"]["code"] == 70
     assert d["line"] == "2h 10m active · longest focus 53m on pdg · 1 commit"
@@ -213,3 +213,29 @@ def test_focus_counts_reading_and_breaks_on_interruptions(tmp_path, rules):
     longest = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO, now)[
         "summary"]["longest"]
     assert (longest["label"], longest["kind"], longest["minutes"]) == ("flood-model-review.pdf", "document", 68)
+
+
+def test_period_week_matches_its_days(tmp_path, rules, projects):
+    from daytrace import dayjson, period
+
+    assert period.week_of(date(2026, 10, 22)) == (date(2026, 10, 18), date(2026, 10, 24))
+    assert period.month_of(date(2026, 2, 10)) == (date(2026, 2, 1), date(2026, 2, 28))
+
+    s = store(tmp_path)
+    nine = datetime(2026, 10, 22, 9, 0).astimezone()
+    pdg = str(projects / "PDG")
+    sync(s, rules, [Fake("fake", [
+        raw("cc1", nine, 40, category="code", path=pdg),
+        raw("c1", nine + timedelta(minutes=30), category="commit", title="Fix it", path=pdg),
+    ])], nine + timedelta(hours=2))
+    now = nine + timedelta(hours=2)
+    p = period.build(s, date(2026, 10, 18), date(2026, 10, 24), ZERO, now)
+
+    start, end = day_bounds(date(2026, 10, 22))
+    day = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO, now)
+    assert [d["has_data"] for d in p["days"]] == [False, False, False, False, True, False, False]
+    assert [d["future"] for d in p["days"]] == [False] * 5 + [True, True]
+    assert p["elapsed"] == 5
+    assert p["totals"]["active_min"] == day["summary"]["active_min"] == 40
+    assert p["projects"] == [{"project": "pdg", "minutes": 40, "commits": 1, "prs": 0}]
+    assert p["focus"]["date"] == "2026-10-22"

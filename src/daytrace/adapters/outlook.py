@@ -1,5 +1,6 @@
 """Outlook via Microsoft Graph: calendar events (taken as attended) and email metadata (never bodies)."""
 
+import re
 from datetime import datetime, timedelta
 from typing import Iterable
 
@@ -37,16 +38,29 @@ def calendar_raw(e: dict) -> RawEvent | None:
         return None
     start, end = _when(e["start"]), _when(e["end"])
     organizer = ((e.get("organizer") or {}).get("emailAddress") or {}).get("address", "")
+    subject = e.get("subject") or "(no subject)"
+    people = [(p.get("emailAddress") or {}).get("name") for p in [e.get("organizer") or {}, *(e.get("attendees") or [])]]
+    attrs = {
+        "attendees": len(e.get("attendees") or []),
+        "response": response,
+        "organizer_domain": organizer.partition("@")[2].lower() or None,
+        "online": e.get("onlineMeetingProvider") if e.get("isOnlineMeeting") else None,
+    }
+    redacted = without_names(subject, people)
+    if redacted != subject:
+        attrs["lumen_title"] = redacted  # what Lumen sees; the names themselves are never stored
     return RawEvent(
         "outlook_calendar", e["id"], "plan", "scheduled", start, end,
-        category="meeting", title=e.get("subject") or "(no subject)", url=e.get("webLink"),
-        attrs={
-            "attendees": len(e.get("attendees") or []),
-            "response": response,
-            "organizer_domain": organizer.partition("@")[2].lower() or None,
-            "online": e.get("onlineMeetingProvider") if e.get("isOnlineMeeting") else None,
-        },
+        category="meeting", title=subject, url=e.get("webLink"), attrs=attrs,
     )
+
+
+def without_names(text: str, names: list[str | None]) -> str:
+    """text with each name, and each word of three or more letters in it, replaced by "[person]"."""
+    words = {w for n in names if n for w in [n, *re.split(r"[\s,()]+", n)] if len(w.strip(".")) >= 3}
+    for w in sorted(words, key=len, reverse=True):  # full names before their parts
+        text = re.sub(rf"(?<![\w@]){re.escape(w)}(?![\w@])", "[person]", text, flags=re.I)
+    return re.sub(r"\[person\](?:[\s,]+\[person\])+", "[person]", text)
 
 
 def _when(value: dict) -> datetime:

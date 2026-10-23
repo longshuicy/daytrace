@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, dayjson, launchd, msgraph, summarize
+from . import config, dayjson, launchd, msgraph, period, summarize
 from .adapters import NotConfigured, all_adapters
 from .models import UTC, iso, parse_iso
 from .report import day_bounds, render
@@ -84,15 +84,27 @@ def cmd_day(args) -> None:
     print(dayjson.dumps(data))
 
 
+def cmd_period(args) -> None:
+    store, _ = _open()
+    anchor = date.fromisoformat(args.date) if args.date else date.today()
+    first, last = (period.week_of if args.kind == "week" else period.month_of)(anchor)
+    print(dayjson.dumps(period.build(store, first, last, day_zero(store), datetime.now(UTC), args.kind)))
+
+
 def cmd_summarize(args) -> None:
     store, rules = _open()
     day_zero(store)
     day = date.fromisoformat(args.date) if args.date else date.today()
-    r = summarize.summarize(store, rules, day, datetime.now(UTC), send=args.send)
+    if args.period:
+        first, last = (period.week_of if args.period == "week" else period.month_of)(day)
+        r = summarize.summarize_period(store, rules, args.period, first, last, datetime.now(UTC), send=args.send)
+    else:
+        r = summarize.summarize(store, rules, day, datetime.now(UTC), send=args.send)
     if r.mode == "dry-run":
         print(f"Dry run: {r.entries} entries. Nothing was sent.")
         print(f"The exact request is in {r.audit}")
-        print("Review it, then run `daytrace summarize --send`, or set mode = \"send\" under [lumen] in rules.toml.")
+        again = f" --period {args.period}" if args.period else ""
+        print(f"Review it, then run `daytrace summarize{again} --send`, or set mode = \"send\" under [lumen] in rules.toml.")
     else:
         print(r.narrative)
         if r.themes:
@@ -164,9 +176,15 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--json", action="store_true", help="accepted for clarity; output is always JSON")
     p.set_defaults(func=cmd_day)
 
-    p = sub.add_parser("summarize", help="describe a day with Lumen (dry run unless --send or mode = send)")
+    p = sub.add_parser("period", help="a week (Sunday to Saturday) or month as JSON, for the desktop app")
+    p.add_argument("kind", choices=["week", "month"])
+    p.add_argument("--date", help="any day in it, YYYY-MM-DD, default today")
+    p.set_defaults(func=cmd_period)
+
+    p = sub.add_parser("summarize", help="describe a day, week or month with Lumen (dry run unless --send or mode = send)")
     p.add_argument("--date", help="YYYY-MM-DD, default today")
     p.add_argument("--send", action="store_true", help="send to Lumen this time, even in dry-run mode")
+    p.add_argument("--period", choices=["week", "month"], help="summarize the week or month around --date instead")
     p.set_defaults(func=cmd_summarize)
 
     sub.add_parser("status", help="sources, counts, last sync").set_defaults(func=cmd_status)

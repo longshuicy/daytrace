@@ -1,34 +1,53 @@
 /* Tokens: reference palette, light + dark selected separately (validated with the dataviz validator). */
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
+  --page: #f7f7f5;
+  --surface: #fcfcfa;
+  --surface-raised: #ffffff;
   --surface-2: #f3f2ee;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
+  --chip: #efeeea;
+  --ink: #1c1c1a;
+  --ink-2: #4a4945;
+  --muted: #6b6a66;
+  --faint: #a8a6a0;
+  --grid: #eeece7;
+  --divider: #eeece7;
+  --axis: #c9c7c1;
+  --border: #e4e2dd;
+  --bar: #6e6c66;
+  --button: #111111;
+  --button-ink: #ffffff;
   --good: #0ca30c;
   --critical: #d03b3b;
   --warning: #fab219;
+  --added: #1b7a3e;
+  --removed: #b42318;
+  --spark-none: #dad8d2;
+  --dash: #d3d1cb;
+  --heat-0: #efeeea;
+  --heat-1: #c9c7c1;
+  --heat-2: #8e8c86;
+  --heat-3: #4a4945;
+  --heat-4: #1c1c1a;
+  --heat-ink: #ffffff;
 
-  --g-coord: #2a78d6;
-  --g-code: #eb6834;
-  --g-review: #eda100;
-  --g-writing: #e87ba4;
-  --g-browse: #008300;
-  --g-other: #898781;
-  --g-private: #b5b3ab;
+  --g-meeting: #4478d4;
+  --g-comms: #6a2fa8;
+  --g-code: #e07040;
+  --g-review: #e0a030;
+  --g-writing: #db7aa6;
+  --g-browse: #3b7d23;
+  --g-other: #b8b6b0;
+  --g-private: #d9d7d2;
 
   --pill-ink: #0b0b0b;
   --pill-ink-2: #3c3b38;
   --pill-track: rgba(11, 11, 11, 0.08);
 
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
   color: var(--ink);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -44,8 +63,26 @@
     --grid: #2c2c2a;
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.1);
+    --surface-raised: #2c2c2a;
+    --chip: #232321;
+    --faint: #5a5955;
+    --divider: #2c2c2a;
+    --bar: #a8a6a0;
+    --button: #f0efec;
+    --button-ink: #111111;
+    --added: #4cc06a;
+    --removed: #f07060;
+    --spark-none: #383835;
+    --dash: #4a4945;
+    --heat-0: #2c2c2a;
+    --heat-1: #4a4945;
+    --heat-2: #6e6c66;
+    --heat-3: #a8a6a0;
+    --heat-4: #e4e2dd;
+    --heat-ink: #111111;
 
-    --g-coord: #3987e5;
+    --g-meeting: #3987e5;
+    --g-comms: #8a3fb8;
     --g-code: #d95926;
     --g-review: #c98500;
     --g-writing: #d55181;
