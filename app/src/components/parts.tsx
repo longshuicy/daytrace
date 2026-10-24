@@ -6,7 +6,7 @@ import type { Commits, Highlights, Note, ProjectRow, Site } from "../types";
 /** Pieces the day, week and month views share. */
 
 export function Tile({ label, value, note, extra, children }:
-  { label: string; value: ReactNode; note: string; extra?: string; children?: ReactNode }) {
+  { label: string; value: ReactNode; note: ReactNode; extra?: string; children?: ReactNode }) {
   return (
     <div className="tile">
       <div className="tile-label">{label}</div>

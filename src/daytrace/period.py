@@ -60,7 +60,9 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
         points += [r for r in rows if not r["end_at"] and r["category"] == "commit"]
 
     data_days = [r for r in days if r["has_data"]]
+    workdays = [r for r in data_days if date.fromisoformat(r["date"]).weekday() < 5]
     active = sum(r["active_min"] for r in days)
+    workday_active = sum(r["active_min"] for r in workdays)
     summary = {"active_min": active, "longest": best, "counts": counts}
     return {
         "start": first.isoformat(),
@@ -71,7 +73,10 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
         "line": dayjson.pill_line(summary) if data_days else "Nothing recorded yet",
         "totals": {
             "active_min": active,
-            "avg_active_min": round(active / len(data_days)) if data_days else 0,
+            "avg_active_min": round(workday_active / len(workdays)) if workdays else 0,
+            "avg_active_min_all": round(active / len(data_days)) if data_days else 0,
+            "workdays": len(workdays),
+            "data_days": len(data_days),
             "meeting_min": counts["meeting_min"],
             "meetings": counts["meetings"],
             "emails_sent": counts["emails_sent"],

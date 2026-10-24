@@ -79,8 +79,7 @@ function Body({ kind, p, openDay }: { kind: PeriodKind; p: Period; openDay: (d: 
       <PeriodStory kind={kind} p={p} />
 
       <section className="g5">
-        <Tile label={`Active · ${word} total`} value={minutes(t.active_min)}
-          note={t.avg_active_min ? `avg ${minutes(t.avg_active_min)} per day with data` : "no data yet"}>
+        <Tile label={`Active · ${word} total`} value={minutes(t.active_min)} note={<Average t={t} />}>
           {spark((d) => d.active_min, "var(--bar)", "Active")}
         </Tile>
         <Tile label={`Meetings · ${word} total`} value={minutes(t.meeting_min)}
@@ -113,6 +112,28 @@ function Body({ kind, p, openDay }: { kind: PeriodKind; p: Period; openDay: (d: 
 
       <ProjectsAndSites projects={p.projects} sites={p.sites} />
     </>
+  );
+}
+
+const AVERAGE_KEY = "daytrace.average";
+
+/** Average active time per weekday with data (the default) or per any day with data; click to switch. */
+function Average({ t }: { t: Period["totals"] }) {
+  const [all, setAll] = useState(() => localStorage.getItem(AVERAGE_KEY) === "all");
+  if (!t.data_days) return <>no data yet</>;
+  const toggle = () => {
+    localStorage.setItem(AVERAGE_KEY, all ? "workdays" : "all");
+    setAll(!all);
+  };
+  const avg = all ? t.avg_active_min_all : t.avg_active_min;
+  const text = all
+    ? `avg ${minutes(avg)} per day with data`
+    : t.workdays ? `avg ${minutes(avg)} per workday` : "no workday data yet";
+  return (
+    <button className="link avg-toggle" onClick={toggle}
+      title={all ? "Counting every day with data. Click to count Mon–Fri only" : "Counting Mon–Fri only. Click to count every day with data"}>
+      {text}
+    </button>
   );
 }
 

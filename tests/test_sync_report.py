@@ -232,6 +232,25 @@ def test_period_week_matches_its_days(tmp_path, rules, projects):
     assert p["focus"]["date"] == "2026-10-22"
 
 
+def test_period_average_counts_workdays_by_default(tmp_path, rules, projects):
+    from daytrace import period
+
+    s = store(tmp_path)
+    pdg = str(projects / "PDG")
+    thu = datetime(2026, 10, 22, 9, 0).astimezone()
+    sat = datetime(2026, 10, 24, 9, 0).astimezone()
+    now = sat + timedelta(hours=2)
+    sync(s, rules, [Fake("fake", [
+        raw("thu", thu, 60, category="code", path=pdg),
+        raw("sat", sat, 20, category="code", path=pdg),
+    ])], now)
+    t = period.build(s, date(2026, 10, 18), date(2026, 10, 24), ZERO, now)["totals"]
+
+    assert (t["workdays"], t["data_days"]) == (1, 2)
+    assert t["avg_active_min"] == 60
+    assert t["avg_active_min_all"] == 40
+
+
 def test_top_sites_list_pages_without_a_site_by_title(tmp_path, rules):
     from daytrace import dayjson
     s = store(tmp_path)

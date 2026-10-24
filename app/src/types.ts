@@ -224,7 +224,8 @@ export interface Period {
   elapsed: number;
   line: string;
   totals: {
-    active_min: number; avg_active_min: number; meeting_min: number; meetings: number;
+    active_min: number; avg_active_min: number; avg_active_min_all: number; workdays: number; data_days: number;
+    meeting_min: number; meetings: number;
     emails_sent: number; emails_received: number;
   };
   focus: (Focus & { date: string }) | null;

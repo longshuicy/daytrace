@@ -96,6 +96,7 @@ h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
   -webkit-line-clamp: 2; }  /* a lone note gets both lines */
 .tile-notes .link { font: inherit; color: var(--ink-2); text-align: left; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-note .avg-toggle { font: inherit; color: inherit; text-align: left; }
 .tile-notes .granola { flex-shrink: 0; color: var(--muted); text-decoration: none; }
 .tile-notes .granola:hover { color: var(--ink); }
 
