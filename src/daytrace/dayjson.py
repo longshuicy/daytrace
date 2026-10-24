@@ -5,6 +5,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
+from .adapters.granola import match
 from .models import parse_iso
 from .report import day_bounds, merge, total
 
@@ -52,7 +53,7 @@ def _minutes(td: timedelta) -> int:
 
 
 def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts: dict[str, int],
-          day_zero: datetime, now: datetime) -> dict:
+          day_zero: datetime, now: datetime, notes: list[dict] = ()) -> dict:
     start, end = day_bounds(day)
     spans, points, idle = [], [], []
     received = 0
@@ -72,6 +73,7 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             points.append(r)
 
     blocks = _blocks(spans)  # drawn in full, including meetings later today
+    loose_notes = attach_notes(blocks, list(notes))
     # Stats only count what has happened: scheduled time after now is not time spent.
     spans = [(r, s, min(e, now)) for r, s, e in spans if min(e, now) > s]
     private = [(s, e) for r, s, e in spans if r["sensitivity"] == "private"]
@@ -135,7 +137,7 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "group": group_of(p["category"], p["sensitivity"]),
             "category": p["category"], "project": p["project"], "sensitivity": p["sensitivity"],
             "source": p["source"], "title": p["title"], "url": p["url"],
-        } for p in points],
+        } for p in points] + loose_notes,
         "idle": [{"start": _local(s), "end": _local(e)} for s, e in merge(idle)],
         "sites": sites(spans),
         "highlights": _highlights(points, spans, summary),
@@ -218,6 +220,7 @@ def story_view(row: dict | None) -> dict | None:
     stats = row["stats"]
     return {
         "narrative": row["narrative"], "themes": stats.get("themes", []), "model": row["model"],
+        "observations": stats.get("observations", []), "next_week": stats.get("next_week", []),
         "generated_at": _local(parse_iso(row["generated_at"])), "dry_run": bool(stats.get("dry_run")),
         "audit": stats.get("audit"), "entries": stats.get("entries", 0),
         "request": stats.get("request") if stats.get("dry_run") else None,
@@ -258,33 +261,64 @@ def _blocks(spans: list) -> list[dict]:
     return sorted(out, key=lambda b: b["start"])
 
 
+def attach_notes(blocks: list[dict], notes: list[dict]) -> list[dict]:
+    """Give each calendar block the meeting notes taken in it; return the rest as points of their own."""
+    meetings = [b for b in blocks if b["source"] == "outlook_calendar"]
+    for b in meetings:
+        b["notes"] = []
+    loose = []
+    for n, i in zip(notes, match(notes, [(parse_iso(b["start"]), parse_iso(b["end"])) for b in meetings])):
+        note = {"id": n["id"], "title": n["title"], "url": n["url"], "path": n["path"]}
+        if i is None:
+            loose.append({"at": _local(parse_iso(n["meeting_at"])), "group": "meeting", "category": "notes",
+                          "project": None, "sensitivity": "normal", "source": "granola", **note})
+        else:
+            meetings[i]["notes"].append(note)
+    return loose
+
+
 def _longest_focus(spans: list, idle: list) -> dict | None:
-    """Longest stretch of activity without interruptions, labeled by what took most of it.
+    """Longest stretch of activity without interruptions, labeled by what took most of it (see focus_stretches)."""
+    stretches = focus_stretches(spans, idle)
+    if not stretches:
+        return None
+    best = max(stretches, key=lambda f: f["_length"])
+    return {k: best[k] for k in ("label", "kind", "minutes", "start", "end")}
+
+
+def focus_stretches(spans: list, idle: list) -> list[dict]:
+    """Stretches of activity without interruptions, in time order, each labeled by what took most of it and with
+    what ended it: "meeting", "comms" (mail or chat), "break" (private time or away) or "stopped" (nothing tracked).
 
     Any non-private activity outside meetings and mail counts (code, docs, PDFs, the browser), with gaps under
     5 minutes joined. Meetings, mail, chat or private time of 2 minutes or more, and more than 5 minutes away
     from the keyboard, cut a stretch. The label is the project with the most time in it, else a document, else
     a site, else an app, decided per span.
     """
-    work, breaks = [], [(s, e) for s, e in idle if e - s > AWAY]
+    work, breaks = [], [(s, e, "break") for s, e in idle if e - s > AWAY]
     for r, s, e in spans:
         if r["sensitivity"] == "private" or group_of(r["category"], r["sensitivity"]) in INTERRUPTS:
             if e - s >= INTERRUPTION:
-                breaks.append((s, e))
+                why = "break" if r["sensitivity"] == "private" else group_of(r["category"], r["sensitivity"])
+                breaks.append((s, e, why))
         else:
             work.append((r, s, e))
-    breaks = merge(breaks)
-    segments = [seg for iv in merge([(s, e) for _, s, e in work], gap=STRETCH_GAP) for seg in _cut(iv, breaks)]
-    if not segments:
-        return None
-    s0, e0 = max(segments, key=lambda iv: iv[1] - iv[0])
-    weight = defaultdict(timedelta)
-    for r, s, e in work:
-        a, b = max(s, s0), min(e, e0)
-        if b > a:
-            weight[_focus_key(r)] += b - a
-    kind, label = max(weight, key=weight.get)
-    return {"label": label, "kind": kind, "minutes": _minutes(e0 - s0), "start": _local(s0), "end": _local(e0)}
+    merged = merge([(s, e) for s, e, _ in breaks])
+    segments = [seg for iv in merge([(s, e) for _, s, e in work], gap=STRETCH_GAP) for seg in _cut(iv, merged)]
+    out = []
+    for s0, e0 in sorted(segments):
+        weight = defaultdict(timedelta)
+        for r, s, e in work:
+            a, b = max(s, s0), min(e, e0)
+            if b > a:
+                weight[_focus_key(r)] += b - a
+        if not weight:
+            continue
+        kind, label = max(weight, key=weight.get)
+        enders = sorted((bs, why) for bs, be, why in breaks if bs <= e0 < be)
+        out.append({"label": label, "kind": kind, "minutes": _minutes(e0 - s0), "start": _local(s0),
+                    "end": _local(e0), "ended_by": enders[0][1] if enders else "stopped", "_length": e0 - s0})
+    return out
 
 
 def _cut(interval: tuple, breaks: list) -> list[tuple]:

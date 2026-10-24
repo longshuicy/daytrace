@@ -1,7 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState, type ReactNode } from "react";
 import { colorVar, minutes } from "../format";
-import type { Commits, Highlights, ProjectRow, Site } from "../types";
+import type { Commits, Highlights, Note, ProjectRow, Site } from "../types";
 
 /** Pieces the day, week and month views share. */
 
@@ -18,8 +18,30 @@ export function Tile({ label, value, note, extra, children }:
   );
 }
 
+/** The day's meeting notes in two lines: the title opens the saved copy, the arrow opens Granola. Past two, the
+ * second line opens the next note, and the panel steps through the rest. */
+export function MeetingNotes({ notes, open }: { notes: Note[]; open: (id: string) => void }) {
+  const shown = notes.length > 2 ? notes.slice(0, 1) : notes;
+  return (
+    <ul className={notes.length === 1 ? "tile-notes one" : "tile-notes"}>
+      {shown.map((n) => (
+        <li key={n.id}>
+          <button className="link" title={n.title} onClick={() => open(n.id)}>{n.title || "Untitled note"}</button>
+          {n.url && <button className="link granola" title="Open in Granola" onClick={() => openUrl(n.url!)}>↗</button>}
+        </li>
+      ))}
+      {notes.length > 2 && (
+        <li>
+          <button className="link more" title={notes.slice(1).map((n) => n.title).join("\n")}
+            onClick={() => open(notes[1].id)}>+{notes.length - 1} more notes</button>
+        </li>
+      )}
+    </ul>
+  );
+}
+
 export function Change({ insertions, deletions }: { insertions: number; deletions: number }) {
-  return <><span className="added">+{insertions}</span> <span className="removed">−{deletions}</span></>;
+  return <span className="fit"><span className="added">+{insertions}</span> <span className="removed">−{deletions}</span></span>;
 }
 
 export function commitNote(c: Commits) {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { summarizePeriod, usePeriod } from "../api";
 import { GROUP_LABEL, ago, clock, minutes, shiftDate, today } from "../format";
-import type { Exclusion, Period, PeriodDay, PeriodKind, ReviewEntry, ReviewRequest } from "../types";
+import type { Exclusion, Period, PeriodDay, PeriodKind, ReviewEntry, ReviewRequest, TodoGroup } from "../types";
 import { Change, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard } from "./parts";
 
 const parse = (iso: string) => new Date(`${iso}T12:00:00`);
@@ -320,12 +320,70 @@ function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
             : <p className="muted">Short labels Lumen picks from the {kind}.</p>}
         </div>
       </div>
+      {story?.narrative && (story.observations?.length > 0 || story.next_week?.length > 0) && (
+        <div className="story-boxes">
+          {story.observations?.length > 0 && (
+            <div className="story-box main">
+              <div className="box-label">Worth a look</div>
+              <ul className="observations">
+                {story.observations.map((o, i) => (
+                  <li key={i}>
+                    <span className="obs-kind">{OBSERVATION_LABEL[o.kind] ?? o.kind}</span>
+                    <p>{o.text}</p>
+                    {o.evidence && <p className="obs-evidence">{o.evidence}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {kind === "week" && story.next_week?.length > 0 && <NextWeek groups={story.next_week} />}
+        </div>
+      )}
       {error && <div className="notice error">{error}</div>}
     </section>
   );
 }
 
+const OBSERVATION_LABEL: Record<string, string> = {
+  open_loop: "Open loop", recurring: "Recurring", time_vs_weight: "Time vs. weight", pattern: "Pattern",
+};
+
+/** The week's draft todo list for the next one, to copy into the 1:1 doc. */
+function NextWeek({ groups }: { groups: TodoGroup[] }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    const text = groups.map((g) => [g.project, ...g.todos.map((t) => `- ${t.text}`)].join("\n")).join("\n\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="story-box todos-box">
+      <div className="box-head">
+        <div className="box-label">Draft for next week</div>
+        <button className="quiet small" onClick={copy}>{copied ? "Copied" : "Copy todos"}</button>
+      </div>
+      {groups.map((g) => (
+        <div key={g.project} className="todo-group">
+          <div className="todo-project">{g.project}</div>
+          <ul>
+            {g.todos.map((t, i) => (
+              <li key={i}>
+                {t.text}
+                {t.why && <span className="todo-why">{t.why}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      <p className="caption">A draft from this week's open loops. Edit it before it goes in your list.</p>
+    </div>
+  );
+}
+
 const FIELDS = [["titles", "Titles"], ["sites", "Sites and pages"], ["branches", "Branches"]] as const;
+const MEETING_FIELDS = [["topics", "Topics"], ["mine", "Mine"], ["waiting", "Waiting on"], ["unassigned", "Unassigned"]] as const;
 
 function entryName(e: ReviewEntry): string {
   if (e.kind === "meeting") return "Meetings";
@@ -344,10 +402,17 @@ function Review({ kind, request, audit, busy, onSend, onRebuild }: {
     if (!next.delete(k)) next.add(k);
     return next;
   });
+  const mid = (meeting: string, field?: string, value?: string) => JSON.stringify(["meeting", meeting, field ?? null, value ?? null]);
   const exclusions: Exclusion[] = [...out].map((k) => {
-    const [entry, field, value] = JSON.parse(k);
+    const parts = JSON.parse(k);
+    if (parts[0] === "meeting" && parts.length === 4) {
+      const [, meeting, field, value] = parts;
+      return field ? { meeting, field, value } : { meeting };
+    }
+    const [entry, field, value] = parts;
     return field ? { entry, field, value } : { entry };
   });
+  const meetings = request.meetings ?? [];
   const kept = request.entries.filter((e) => !out.has(id(e.key))).length;
   const privateMin = request.private.minutes;
 
@@ -401,9 +466,49 @@ function Review({ kind, request, audit, busy, onSend, onRebuild }: {
           );
         })}
       </ul>
+      {meetings.length > 0 && (
+        <>
+          <h3 className="review-heading">Meeting notes</h3>
+          <p className="review-note">
+            Topics and action items from your Granola notes, with people's names replaced by [person]. A name that was
+            missed can be clicked out.
+          </p>
+          <ul className="review-list">
+            {meetings.map((m) => {
+              const off = out.has(mid(m.key));
+              return (
+                <li key={m.key} className={off ? "off" : undefined}>
+                  <label className="review-entry">
+                    <input type="checkbox" checked={!off} onChange={() => toggle(mid(m.key))} />
+                    <span className="review-name">{m.title ?? "Not on the calendar"}</span>
+                    <span className="muted tabular">{m.day} · {m.time}</span>
+                  </label>
+                  {!off && MEETING_FIELDS.map(([field, label]) => m[field].length > 0 && (
+                    <div key={field} className="review-field">
+                      <span className="review-label">{label}</span>
+                      <div className="review-values">
+                        {m[field].map((v) => {
+                          const k = mid(m.key, field, v);
+                          return (
+                            <button key={v} className={`review-chip${out.has(k) ? " off" : ""}`} onClick={() => toggle(k)}
+                              aria-pressed={!out.has(k)} title={out.has(k) ? "Left out. Click to include" : "Click to leave out"}>
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
       <p className="review-note muted">
         Also sent: totals for the {kind} and for each of {request.days.length} day{request.days.length === 1 ? "" : "s"} with
-        data (active and meeting minutes, first and last activity)
+        data (active and meeting minutes, first and last activity, project switches, back-to-back meetings, focus
+        stretches and what ended them, time outside 9–5)
         {privateMin ? `, private time as one total (${minutes(privateMin)})` : ""}
         {request.also.episodes ? `, and a count of ${request.also.episodes} short bits too small to list` : ""}.
         {audit && <> The full request is saved at <code className="path inline">{audit}</code>.</>}

@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
-import type { Day, Exclusion, Period, PeriodKind } from "./types";
+import type { Day, Exclusion, Period, PeriodKind, SavedNote } from "./types";
 
 export const loadDay = (date?: string) => invoke<Day>("day", { date: date ?? null });
+export const loadNote = (id: string) => invoke<SavedNote>("note", { id });
 export const loadPeriod = (kind: PeriodKind, date: string) => invoke<Period>("period", { kind, date });
 export const syncNow = () => invoke<string>("sync_now");
 /** Build the week's or month's request for review (send false), or send the reviewed request minus exclusions. */

@@ -4,10 +4,11 @@ import { backup, syncNow, useDay } from "../api";
 import {
   GROUP_LABEL, LANES, SOURCE_LABEL, clock, colorVar, longDate, minutes, shiftDate, today,
 } from "../format";
-import type { Day, PeriodKind } from "../types";
+import type { Day, Note, PeriodKind } from "../types";
 import DatePicker from "./DatePicker";
 import DayClock from "./DayClock";
-import { Change, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
+import { NotePanel } from "./NotePanel";
+import { Change, MeetingNotes, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
 import PeriodView, { periodLabel, shiftPeriod } from "./PeriodView";
 import Timeline from "./Timeline";
 import { Tooltip, useTooltip } from "./Tooltip";
@@ -112,17 +113,24 @@ interface BodyProps {
 function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
   const s = day.summary;
   const h = day.highlights;
+  const [openNote, setOpenNote] = useState<string | null>(null);
+  const notes = useMemo(() => [  // in time order, so the panel can step through them
+    ...day.blocks.flatMap((b) => (b.notes ?? []).map((n) => ({ at: b.start, n }))),
+    ...day.points.flatMap((p) => p.id ? [{ at: p.at, n: { id: p.id, title: p.title ?? "", url: p.url, path: "" } as Note }] : []),
+  ].sort((a, b) => +new Date(a.at) - +new Date(b.at)).map((x) => x.n), [day]);
   if (day.before_tracking) {
     return <div className="notice">Tracking started {new Date(day.day_zero).toLocaleString()}. Nothing is recorded before that.</div>;
   }
   return (
     <>
-      <section className="g5">
+      <section className="g5 day-tiles">
         <Tile label="Active" value={minutes(s.active_min)}
           note={s.first ? `${clock(s.first)}–${clock(s.last!)}${s.groups.other ? ` · incl. ${minutes(s.groups.other)} other` : ""}`
             : "no activity yet"} />
         <Tile label="Meetings" value={minutes(s.counts.meeting_min)}
-          note={s.counts.meetings ? `${s.counts.meetings} meeting${s.counts.meetings === 1 ? "" : "s"}` : "none on your calendar"} />
+          note={s.counts.meetings ? `${s.counts.meetings} meeting${s.counts.meetings === 1 ? "" : "s"}` : "none on your calendar"}>
+          {notes.length > 0 && <MeetingNotes notes={notes} open={setOpenNote} />}
+        </Tile>
         <Tile label="Email sent" value={String(s.counts.emails_sent)} note={`${s.counts.emails_received} received`} />
         {h.focus && h.focus.minutes >= 10
           ? <Tile label="Longest focus" value={minutes(h.focus.minutes)}
@@ -148,7 +156,7 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
             </div>
           )}
         </div>
-        {view === "timeline" && <Timeline day={day} fullDay={fullDay} tooltip={tooltip} />}
+        {view === "timeline" && <Timeline day={day} fullDay={fullDay} tooltip={tooltip} setOpenNote={setOpenNote} />}
         {view === "clock" && (
           <div className="clock-view">
             <DayClock day={day} tooltip={tooltip} />
@@ -173,6 +181,8 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
       )}
 
       <ProjectsAndSites projects={s.projects} sites={day.sites} />
+      {openNote && <NotePanel id={openNote} ids={notes.map((n) => n.id)} onOpen={setOpenNote}
+        onClose={() => setOpenNote(null)} />}
     </>
   );
 }

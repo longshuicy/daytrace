@@ -27,6 +27,7 @@ apps/folders map to categories and projects goes in `~/.daytrace/rules.toml` (co
 | GitHub | `gh auth login` ([GitHub CLI](https://cli.github.com/)), or `GITHUB_TOKEN` in `.env` |
 | Confluence | wiki → profile → **Personal Access Tokens** → `CONFLUENCE_TOKEN` (and `CONFLUENCE_URL` if not the NCSA wiki) |
 | Outlook | see below |
+| Granola notes | `daytrace connect granola` (below) |
 
 ### Outlook calendar and mail
 
@@ -49,6 +50,21 @@ daytrace signs in to Microsoft Graph with its own read-only app registration (no
 
 Only subjects, times, attendee counts and the other side's email *domains* are kept, never bodies or addresses.
 
+### Granola meeting notes
+
+`daytrace connect granola` signs in to [Granola's MCP server](https://docs.granola.ai/help-center/sharing/integrations/mcp)
+with a device code (works on the free plan). Each sync copies new or changed notes, meaning your own notes plus
+Granola's summary, into `~/.daytrace/notes/granola/` as Markdown, one file per meeting. The first sync goes back
+30 days, which is as far as the free plan reaches. After that, syncing keeps every note even once Granola stops serving it.
+
+The day view attaches each note to the Outlook meeting running when the note was started (or starting within
+15 minutes); hover a meeting to see it, click to read the saved copy (with a link to Granola). Notes that
+match no meeting show as dots.
+Note text is never stored in the database. A week or month summary request gets only each note's topics and
+action items (yours, ones you're waiting on, unassigned), with people's names replaced by `[person]`; you see
+them in the review and can click any out. The sign-in is in
+`~/.daytrace/granola-token.json`; `daytrace disconnect granola` removes it.
+
 ## 3. Week/month summaries (optional)
 
 Any OpenAI-compatible chat endpoint works. Set three values in `.env`:
@@ -58,6 +74,11 @@ Any OpenAI-compatible chat endpoint works. Set three values in `.env`:
 | `LUMEN_BASE_URL` | your Lumen URL ending in `/v1` | `https://openrouter.ai/api/v1` |
 | `LUMEN_MODEL` | a model Lumen serves | any id from [openrouter.ai/models](https://openrouter.ai/models) |
 | `LUMEN_API_KEY` | your Lumen key | an [OpenRouter key](https://openrouter.ai/settings/keys) |
+
+A summary is meant for looking back: a short narrative, 3 to 6 observations with the evidence behind them
+(open loops from meeting notes, recurring topics, time vs. weight, and patterns like project switching, meeting
+runs, focus stretches and time outside 9–5), and for a week, a draft todo list for the next one, grouped by
+project, to copy into your own list. daytrace counts the patterns itself; the model only interprets them.
 
 Then, in the app's Week or Month view (or the CLI):
 

@@ -17,6 +17,7 @@ flowchart LR
     GH[GitHub]
     CF[Confluence]
     OL[Outlook via Graph]
+    GR[Granola notes]
   end
   subgraph Mac["This Mac (~/.daytrace)"]
     AD[Adapters] --> IN[Intake: private rules, categorize, scrub]
@@ -49,7 +50,9 @@ flowchart LR
 - **Private is excluded.** Anything matching `[private]` in `~/.daytrace/rules.toml` (apps, title patterns,
   folders, browser profiles) is stored as a bare time block: no app, title, URL or project.
   Incognito windows are not stored at all.
-- **Minimal metadata.** Mail and meetings keep subjects, times and counts, never bodies or addresses. Claude Code
+- **Minimal metadata.** Mail and meetings keep subjects, times and counts, never bodies or addresses. Granola
+  notes, if you connect it, are copied as Markdown files to `~/.daytrace/notes/`, never into the database; a
+  summary request gets only their topics and action items, with names taken out. Claude Code
   keeps session timing, never prompts. Titles are scrubbed of tokens and keys.
 - **The LLM sees only what you approve.** Week/month summaries are opt-in. daytrace builds the request
   (scrubbed, people's names removed, private time as one total), saves it to `~/.daytrace/audit/`, and shows it

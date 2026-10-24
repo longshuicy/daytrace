@@ -51,6 +51,16 @@ async fn day(date: Option<String>) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+async fn note(id: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = run_daytrace(&["note", id.as_str()])?;
+        serde_json::from_str(&text).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn period(kind: String, date: Option<String>) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut args = vec!["period", kind.as_str()];
@@ -154,7 +164,7 @@ fn place_pill(app: &AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![day, period, sync_now, summarize, backup, show_day])
+        .invoke_handler(tauri::generate_handler![day, note, period, sync_now, summarize, backup, show_day])
         .setup(|app| {
             // Menu-bar app: no Dock icon.
             #[cfg(target_os = "macos")]

@@ -22,8 +22,12 @@ export function BlockDetail({ b }: { b: Block }) {
       {b.titles.map((t) => (
         <div key={t} className="tip-title">{t}</div>
       ))}
+      {b.notes?.map((n) => (
+        <div key={n.path} className="tip-row">Notes: {n.title}</div>
+      ))}
       <div className="tip-foot">
         {SOURCE_LABEL[b.source] ?? b.source} · {EVIDENCE[b.evidence] ?? b.evidence}
+        {b.notes?.length ? " · click for notes" : ""}
         {b.sensitivity === "private" && " · details not kept"}
       </div>
     </>
@@ -42,7 +46,7 @@ export function PointDetail({ p }: { p: Point }) {
       {p.title && <div className="tip-title">{p.title}</div>}
       <div className="tip-foot">
         {SOURCE_LABEL[p.source] ?? p.source}
-        {p.url ? " · click to open" : ""}
+        {p.id ? " · click for notes" : p.url ? " · click to open" : ""}
         {p.sensitivity === "private" && " · details not kept"}
       </div>
     </>

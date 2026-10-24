@@ -43,6 +43,7 @@ function stretches(blocks: Block[], bridgeMs: number): Block[] {
       project: projects.join(", ") || null,
       source: sources.length === 1 ? sources[0] : sources.map((s) => SOURCE_LABEL[s] ?? s).join(", "),
       titles: unique(run.flatMap((b) => b.titles)).slice(0, 3),
+      notes: run.flatMap((b) => b.notes ?? []),
     });
     run = [];
   };
@@ -60,11 +61,12 @@ interface Props {
   day: Day;
   fullDay: boolean;
   tooltip: ReturnType<typeof useTooltip>;
+  setOpenNote: (id: string) => void;
 }
 
 /** A "Done" row of single traces (commits, PRs, mail), then one lane per activity group with spans joined into
  *  stretches. Lanes can overlap in time (browsing during a meeting). */
-export default function Timeline({ day, fullDay, tooltip }: Props) {
+export default function Timeline({ day, fullDay, tooltip, setOpenNote }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   useLayoutEffect(() => {
@@ -140,9 +142,11 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
               const x0 = x(new Date(b.start));
               const w = Math.max(2, x(new Date(b.end)) - x0);
               const y = laneY(b.group) + (LANE_H - BAR_H) / 2;
+              const note = b.notes?.[0];
               return (
                 <rect key={i} x={x0} y={y} width={w} height={BAR_H} rx={Math.min(4, w / 2)}
-                  fill={colorVar(b.group)}
+                  fill={colorVar(b.group)} className={note ? "clickable" : undefined}
+                  onClick={() => note && setOpenNote(note.id)}
                   onMouseMove={(e) => tooltip.show(e, <BlockDetail b={b} />)} onMouseLeave={tooltip.hide} />
               );
             })}
@@ -156,9 +160,9 @@ export default function Timeline({ day, fullDay, tooltip }: Props) {
               const cx = x(new Date(p.at));
               const cy = laneY(DONE) + LANE_H / 2;
               return (
-                <g key={i} className={p.url ? "clickable" : undefined}
+                <g key={i} className={p.url || p.id ? "clickable" : undefined}
                   onMouseMove={(e) => tooltip.show(e, <PointDetail p={p} />)} onMouseLeave={tooltip.hide}
-                  onClick={() => p.url && openUrl(p.url)}>
+                  onClick={() => p.id ? setOpenNote(p.id) : p.url && openUrl(p.url)}>
                   <circle cx={cx} cy={cy} r={10} fill="transparent" />
                   <circle cx={cx} cy={cy} r={5} fill={colorVar(p.group)} />
                 </g>

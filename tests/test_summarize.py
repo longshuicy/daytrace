@@ -109,15 +109,17 @@ def test_week_request_is_built_from_gated_days_and_kept_for_review(day_store, mo
     assert r.mode == "dry-run" and r.audit.parent.name == "week-2026-10-18"
     assert stat.S_IMODE(r.audit.stat().st_mode) == 0o600
     body = json.loads(r.audit.read_text())
-    assert body["messages"][0]["content"] == lumen.PERIOD_PROMPT
+    assert body["messages"][0]["content"] == lumen.WEEK_PROMPT
     payload = json.loads(body["messages"][1]["content"])
     text = json.dumps(payload)
     assert "Very private song" not in text and "Spotify" not in text and "Newsletter" not in text
     assert "bob@x.org" not in text and "Fix it for [email]" in text
-    assert set(payload) == {"period", "stats", "days", "entries", "also", "private"}
+    assert set(payload) == {"period", "stats", "days", "entries", "meetings", "also", "private"}
     assert payload["private"] == {"minutes": 40}  # a total only, no time ranges
-    assert payload["days"] == [{"date": "Thu 10-22", "active_min": 165, "meeting_min": 60, "first": "09:00",
-                                "last": "12:40"}]
+    [day] = payload["days"]
+    assert {k: day[k] for k in ("date", "active_min", "meeting_min", "first", "last")} == {
+        "date": "Thu 10-22", "active_min": 165, "meeting_min": 60, "first": "09:00", "last": "12:40"}
+    assert {"switches", "meeting_runs", "focus", "outside_9_5_min"} <= set(day)
     pdg = payload["entries"][0]
     assert set(pdg) == set(egress.PERIOD_ENTRY_FIELDS) and pdg["key"] == "pdg"
     assert pdg["days"] == ["Thu 10-22"]

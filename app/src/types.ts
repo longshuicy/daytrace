@@ -16,6 +16,18 @@ export interface Block {
   source: string;
   titles: string[];
   url: string | null;
+  /** Meeting notes taken in this meeting (calendar blocks only). */
+  notes?: Note[];
+}
+
+export interface Note {
+  /** Granola's id; `daytrace note ID` returns the saved copy. */
+  id: string;
+  title: string;
+  /** Granola's page for the note. */
+  url: string | null;
+  /** The Markdown copy in ~/.daytrace/notes/granola/. */
+  path: string;
 }
 
 export interface Point {
@@ -27,6 +39,13 @@ export interface Point {
   source: string;
   title: string | null;
   url: string | null;
+  /** Granola notes that matched no meeting carry the note's id. */
+  id?: string;
+}
+
+export interface SavedNote extends Note {
+  meeting_at: string;
+  markdown: string;
 }
 
 export interface Source {
@@ -81,9 +100,23 @@ export interface Day {
   storage: { bytes: number; limit: number };
 }
 
+export interface Observation {
+  kind: "open_loop" | "recurring" | "time_vs_weight" | "pattern";
+  text: string;
+  evidence: string;
+}
+
+/** A week's draft todo list for the next one, grouped by project. */
+export interface TodoGroup {
+  project: string;
+  todos: { text: string; why: string }[];
+}
+
 export interface Story {
   narrative: string | null;
   themes: string[];
+  observations: Observation[];
+  next_week: TodoGroup[];
   model: string;
   generated_at: string;
   dry_run: boolean;
@@ -97,6 +130,7 @@ export interface ReviewRequest {
   period: string;
   days: { date: string; active_min: number | null; meeting_min: number | null; first: string | null; last: string | null }[];
   entries: ReviewEntry[];
+  meetings: ReviewMeeting[];
   also: { episodes?: number; minutes?: number };
   private: { minutes: number };
 }
@@ -115,8 +149,24 @@ export interface ReviewEntry {
   branches: string[];
 }
 
-/** What a review took out: a whole entry, or one title, site or branch of it. */
-export type Exclusion = { entry: string } | { entry: string; field: "titles" | "sites" | "branches"; value: string };
+/** A meeting's note as the request has it: topics and action items, people as "[person]". */
+export interface ReviewMeeting {
+  key: string;
+  day: string;
+  time: string;
+  title: string | null;
+  topics: string[];
+  mine: string[];
+  waiting: string[];
+  unassigned: string[];
+}
+
+export type MeetingField = "topics" | "mine" | "waiting" | "unassigned";
+
+/** What a review took out: a whole entry, or one title, site or branch of it; a whole meeting's notes, or one
+ * topic or action item of them. */
+export type Exclusion = { entry: string } | { entry: string; field: "titles" | "sites" | "branches"; value: string }
+  | { meeting: string } | { meeting: string; field: MeetingField; value: string };
 
 export interface Site {
   site: string | null;  // null: sites and pages under a minute, together

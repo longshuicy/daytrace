@@ -35,9 +35,14 @@ def _clock(iso_utc: str) -> str:
     return datetime.fromisoformat(iso_utc.replace("Z", "+00:00")).astimezone().strftime("%H:%M")
 
 
+MEETING_LISTS = ("topics", "mine", "waiting", "unassigned")
+
+
 def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
-                  private: list[tuple[str, str, int]]) -> dict:
-    """entries/also: from episodes.entries; summary: dayjson summary; private: (start_iso, end_iso, minutes)."""
+                  private: list[tuple[str, str, int]], patterns: dict | None = None,
+                  meetings: list[dict] = ()) -> dict:
+    """entries/also: from episodes.entries; summary: dayjson summary; private: (start_iso, end_iso, minutes);
+    patterns: from patterns.day_patterns; meetings: meetings with notes, each {"time", "title", *MEETING_LISTS}."""
     items = []
     for en in entries:
         item = {
@@ -64,6 +69,9 @@ def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
         "entries": items,
         "also": also,
         "private": [{"start": _clock(s), "end": _clock(e), "minutes": m} for s, e, m in private],
+        "patterns": patterns or {},
+        "meetings": [{"time": m["time"], "title": clean(m["title"]) if m.get("title") else None,
+                      **{k: [clean(v) for v in m.get(k, [])] for k in MEETING_LISTS}} for m in meetings],
     }
     check(payload)
     return payload
@@ -72,12 +80,13 @@ def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
 def build_period_payload(label: str, days: list[dict]) -> dict:
     """label: "week of ..." or "October 2026"; days: build_payload results for the days that have data."""
     entries, stats, also = {}, Counter(), Counter()
-    longest, private, per_day = None, 0, []
+    longest, private, per_day, meetings = None, 0, [], []
     for d in days:
         when = d["date"].split()[0][:3] + " " + d["date"].split()[1][5:]  # "Thursday 2026-10-22" -> "Thu 10-22"
         st = d["stats"]
         per_day.append({"date": when, "active_min": st.get("active_min"), "meeting_min": st.get("meeting_min"),
-                        "first": st.get("first"), "last": st.get("last")})
+                        "first": st.get("first"), "last": st.get("last"), **d.get("patterns", {})})
+        meetings += [{"key": f"{when} {m['time']}", "day": when, **m} for m in d.get("meetings", [])]
         stats.update({k: v for k, v in st.items() if isinstance(v, int) and k != "active_min"})
         stats["active_min"] += st.get("active_min") or 0
         if st.get("longest") and (longest is None or st["longest"]["minutes"] > longest["minutes"]):
@@ -108,6 +117,7 @@ def build_period_payload(label: str, days: list[dict]) -> dict:
         "stats": {**{k: stats[k] for k in STAT_FIELDS if k in stats}, "days_with_data": len(days), "longest": longest},
         "days": per_day,
         "entries": items,
+        "meetings": meetings,
         "also": dict(also),
         "private": {"minutes": private},
     }
@@ -120,7 +130,14 @@ REVIEWABLE = ("titles", "sites", "branches")
 
 def without(payload: dict, exclude: list[dict]) -> dict:
     """The payload minus what a review took out: whole entries ({"entry": key}) or single titles, sites or branches
-    ({"entry": key, "field": ..., "value": ...}). Unknown keys or values are ignored; nothing can be added."""
+    ({"entry": key, "field": ..., "value": ...}), and whole meetings' notes ({"meeting": key}) or single topics and
+    action items ({"meeting": key, "field": ..., "value": ...}). Unknown keys or values are ignored; nothing can be
+    added."""
+    gone = {x["meeting"] for x in exclude if "meeting" in x and "field" not in x}
+    cut = {(x["meeting"], x["field"], x["value"]) for x in exclude if "meeting" in x and x.get("field") in MEETING_LISTS}
+    meetings = [{**m, **{f: [v for v in m[f] if (m["key"], f, v) not in cut] for f in MEETING_LISTS}}
+                for m in payload.get("meetings", []) if m["key"] not in gone]
+    exclude = [x for x in exclude if "entry" in x]
     drop = {x["entry"] for x in exclude if "field" not in x}
     parts = {(x["entry"], x["field"], x["value"]) for x in exclude if x.get("field") in REVIEWABLE}
     entries = []
@@ -132,7 +149,7 @@ def without(payload: dict, exclude: list[dict]) -> dict:
             keep = [v for v in en[f] if (en["key"], f, v) not in parts]
             en[f] = {v: en[f][v] for v in keep} if isinstance(en[f], dict) else keep
         entries.append(en)
-    return {**payload, "entries": entries}
+    return {**payload, "entries": entries, "meetings": meetings}
 
 
 def check(payload: dict) -> None:

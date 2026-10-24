@@ -5,8 +5,9 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, dayjson, launchd, msgraph, period, summarize
+from . import config, dayjson, granola, launchd, msgraph, period, summarize
 from .adapters import NotConfigured, all_adapters
+from .adapters import granola as granola_notes
 from .models import UTC, iso, parse_iso
 from .report import day_bounds, render
 from .rules import DEFAULT_RULES, Rules
@@ -79,9 +80,14 @@ def cmd_day(args) -> None:
     start, end = day_bounds(day)
     statuses = {name: json.loads(value) for name, value in _statuses(store, rules).items()}
     rows, now = store.events_between(iso(start), iso(end)), datetime.now(UTC)
-    data = dayjson.build(day, rows, statuses, store.counts_by_source(), day_zero(store), now)
+    notes = granola_notes.notes_between(granola_notes.notes_dir(), start, end)
+    data = dayjson.build(day, rows, statuses, store.counts_by_source(), day_zero(store), now, notes)
     data["storage"] = {"bytes": config.db_path().stat().st_size, "limit": config.STORAGE_LIMIT}
     print(dayjson.dumps(data))
+
+
+def cmd_note(args) -> None:
+    print(json.dumps(granola_notes.read_note(granola_notes.notes_dir(), args.id)))
 
 
 def cmd_period(args) -> None:
@@ -108,6 +114,12 @@ def cmd_summarize(args) -> None:
         print(f"then send it with `daytrace summarize {args.kind}{date_arg} --send`.")
     else:
         print(r.narrative)
+        for o in r.observations:
+            print(f"\n- {o['text']}\n  ({o['evidence']})")
+        for group in r.next_week:
+            print(f"\n{group['project']}")
+            for t in group["todos"]:
+                print(f"  - {t['text']}")
         if r.themes:
             print("\nThemes: " + " · ".join(r.themes))
         print(f"\n(request and reply saved in {r.audit.parent})")
@@ -154,6 +166,12 @@ def cmd_backup(args) -> None:
 
 def cmd_connect(args) -> None:
     config.load_env()
+    if args.service == "granola":
+        print("Sign in with your Granola account. daytrace copies your meeting notes into ~/.daytrace/notes/;")
+        print("a week or month summary request gets only their topics and action items, names taken out.\n")
+        granola.connect()
+        print("\nConnected. Run `daytrace sync --source granola` to copy your notes.")
+        return
     print("Sign in with your Illinois Microsoft account. daytrace asks only for read-only access to your")
     print("calendar and email metadata (subjects, times, sender domains), never message bodies.\n")
     msgraph.connect()
@@ -161,7 +179,8 @@ def cmd_connect(args) -> None:
 
 
 def cmd_disconnect(args) -> None:
-    print("signed out" if msgraph.disconnect() else "wasn't signed in")
+    done = granola.disconnect() if args.service == "granola" else msgraph.disconnect()
+    print("signed out" if done else "wasn't signed in")
 
 
 def cmd_agent(args) -> None:
@@ -192,6 +211,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--json", action="store_true", help="accepted for clarity; output is always JSON")
     p.set_defaults(func=cmd_day)
 
+    p = sub.add_parser("note", help="a saved Granola note as JSON, for the desktop app")
+    p.add_argument("id", help="the note's Granola id")
+    p.set_defaults(func=cmd_note)
+
     p = sub.add_parser("period", help="a week (Sunday to Saturday) or month as JSON, for the desktop app")
     p.add_argument("kind", choices=["week", "month"])
     p.add_argument("--date", help="any day in it, YYYY-MM-DD, default today")
@@ -216,11 +239,11 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("connect", help="sign in to a service that needs it")
-    p.add_argument("service", choices=["outlook"])
+    p.add_argument("service", choices=["outlook", "granola"])
     p.set_defaults(func=cmd_connect)
 
     p = sub.add_parser("disconnect", help="forget a service's sign-in")
-    p.add_argument("service", choices=["outlook"])
+    p.add_argument("service", choices=["outlook", "granola"])
     p.set_defaults(func=cmd_disconnect)
 
     p = sub.add_parser("agent", help="install or remove the background sync agent")

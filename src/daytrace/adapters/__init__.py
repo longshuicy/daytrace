@@ -26,7 +26,8 @@ def all_adapters(rules: Rules) -> list[Adapter]:
     from .cursor import Cursor
     from .git import Git
     from .github import GitHub
+    from .granola import Granola
     from .outlook import OutlookCalendar, OutlookMail
 
     return [ActivityWatch(), Git(rules), ClaudeCode(), Cursor(), GitHub(), Confluence(),
-            OutlookCalendar(), OutlookMail()]
+            OutlookCalendar(), OutlookMail(), Granola()]

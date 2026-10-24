@@ -55,6 +55,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   confluence: "Wiki",
   outlook_calendar: "Outlook calendar",
   outlook_mail: "Outlook mail",
+  granola: "Granola",
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
@@ -69,6 +70,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   release: "Release",
   repo: "Branch / repo",
   wiki: "Wiki",
+  notes: "Meeting notes",
 };
 
 const COUNT_WORD: Record<string, [string, string]> = {
