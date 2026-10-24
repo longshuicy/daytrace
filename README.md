@@ -1,9 +1,9 @@
 # daytrace
 
 A life, in little traces. A local-first recorder that reconstructs what your workday looked like from the
-traces you already leave: meetings, mail, commits, PRs, wiki edits, focused apps.
+traces you already leave: meetings, meeting notes, mail, commits, PRs, wiki edits, focused apps.
 
-- **Setup:** [docs/setup.md](docs/setup.md) — install, sources, Outlook, Lumen/OpenRouter, desktop app
+- **Setup:** [docs/setup.md](docs/setup.md) — install, sources, Outlook, Granola, Lumen/OpenRouter, desktop app
 - **Design:** [docs/design.md](docs/design.md)
 
 ## Architecture
@@ -22,9 +22,12 @@ flowchart LR
   subgraph Mac["This Mac (~/.daytrace)"]
     AD[Adapters] --> IN[Intake: private rules, categorize, scrub]
     IN --> DB[(SQLite)]
+    AD --> NT[(Notes: Markdown files)]
     DB --> CLI[daytrace CLI]
+    NT --> CLI
     CLI --> APP[Tauri app]
     DB --> EG[Egress gate + audit]
+    NT -- topics, action items --> EG
     EG --> RV{You review}
   end
   Sources --> AD
@@ -43,6 +46,7 @@ flowchart LR
 | LLM | any OpenAI-compatible endpoint (Lumen, [OpenRouter](https://openrouter.ai/)) |
 | Window tracking | [ActivityWatch](https://activitywatch.net/) |
 | Outlook | [Microsoft Graph](https://learn.microsoft.com/graph/overview), device-code sign-in |
+| Meeting notes | [Granola's MCP server](https://docs.granola.ai/help-center/sharing/integrations/mcp), device-code sign-in |
 
 ## Privacy
 
