@@ -40,7 +40,7 @@ class FakeSession:
         out = []
         for m in parse_meetings(self.listing):
             x = M()
-            x.id, x.title, x.at, x.updated = m["id"], m["title"], m["meeting_at"], m["updated_at"]
+            x.id, x.title, x.at, x.updated = m["id"], m["title"], m["meeting_at"], m.get("updated_at", "")
             out.append(x)
         return out
 
@@ -73,6 +73,20 @@ def test_sync_writes_markdown_and_refetches_only_changed_notes(tmp_path):
 
     note = read_note(tmp_path, "m1")
     assert note["title"] == "Renamed" and note["markdown"].startswith("## My notes\n\nmy own line")
+
+
+def test_sync_fetches_new_notes_when_the_listing_has_no_updated_at(tmp_path):
+    session = FakeSession()
+    adapter = Granola(tmp_path, session=lambda: session)
+    now = datetime(2026, 10, 23, tzinfo=UTC)
+    adapter.fetch(now - timedelta(days=1), now)
+    bare = LISTING.replace(' updated_at="u1"', "").replace(' updated_at="u2"', "")
+    session.listing = bare.replace("</meetings_data>", '<meeting id="m3" title="New one" '
+                                   'meeting_at="2026-10-22T18:00:00-05:00" url="https://x/m3">\n</meeting>\n'
+                                   "</meetings_data>")
+    session.fetched = []
+    adapter.fetch(now - timedelta(days=1), now)
+    assert "m3" in session.fetched and "m3" in load_index(tmp_path)
 
 
 def test_match_picks_the_running_meeting():

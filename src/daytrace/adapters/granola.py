@@ -54,7 +54,9 @@ class Granola:
         if creator:
             (self.folder / "account.json").parent.mkdir(parents=True, exist_ok=True)
             (self.folder / "account.json").write_text(json.dumps({"name": creator}))
-        changed = [m for m in listed if index.get(m["id"], {}).get("updated_at") != m.get("updated_at")]
+        # list_meetings may leave out updated_at; then a note can't be told unchanged and is fetched again.
+        changed = [m for m in listed if m["id"] not in index or not m.get("updated_at")
+                   or index[m["id"]].get("updated_at") != m["updated_at"]]
         for i in range(0, len(changed), BATCH):
             for m in parse_meetings(s.call("get_meetings", {"meeting_ids": [c["id"] for c in changed[i:i + BATCH]],
                                                             "max_participants": 0})):
