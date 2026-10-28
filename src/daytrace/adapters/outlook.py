@@ -23,7 +23,7 @@ class OutlookCalendar:
         start, end = self.window(since, until)
         events = msgraph.get_all("/me/calendarView", {
             "startDateTime": iso(start), "endDateTime": iso(end), "$top": "100",
-            "$select": "id,iCalUId,subject,start,end,isAllDay,isCancelled,showAs,responseStatus,"
+            "$select": "id,iCalUId,subject,start,end,isAllDay,isCancelled,showAs,responseStatus,sensitivity,"
                        "organizer,attendees,isOnlineMeeting,onlineMeetingProvider,webLink",
         }, headers=UTC_PREFER)
         for e in events:
@@ -52,6 +52,7 @@ def calendar_raw(e: dict) -> RawEvent | None:
     return RawEvent(
         "outlook_calendar", e["id"], "plan", "scheduled", start, end,
         category="meeting", title=subject, url=e.get("webLink"), attrs=attrs,
+        private=e.get("sensitivity") in ("private", "confidential"),
     )
 
 

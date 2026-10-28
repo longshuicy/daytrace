@@ -73,6 +73,9 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             points.append(r)
 
     blocks = _blocks(spans)  # drawn in full, including meetings later today
+    # Away from the keyboard in a meeting is still the meeting, so it isn't shaded as away.
+    in_meetings = merge([(s, e) for r, s, e in spans if r["source"] == "outlook_calendar"])
+    away = [iv for idle_iv in merge(idle) for iv in _cut(idle_iv, in_meetings)]
     loose_notes = attach_notes(blocks, list(notes))
     # Stats only count what has happened: scheduled time after now is not time spent.
     spans = [(r, s, min(e, now)) for r, s, e in spans if min(e, now) > s]
@@ -138,7 +141,7 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "category": p["category"], "project": p["project"], "sensitivity": p["sensitivity"],
             "source": p["source"], "title": p["title"], "url": p["url"],
         } for p in points] + loose_notes,
-        "idle": [{"start": _local(s), "end": _local(e)} for s, e in merge(idle)],
+        "idle": [{"start": _local(s), "end": _local(e)} for s, e in away],
         "sites": sites(spans),
         "highlights": _highlights(points, spans, summary),
     }

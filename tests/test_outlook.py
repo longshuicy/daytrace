@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from daytrace import dayjson
 from daytrace.adapters.outlook import OutlookCalendar, calendar_raw, mail_raw
 from daytrace.intake import transform
-from daytrace.models import UTC, iso
+from daytrace.models import UTC, RawEvent, iso
 from daytrace.report import day_bounds
 from daytrace.store import Store
 from daytrace.sync import sync
@@ -33,6 +33,15 @@ def test_calendar_event_mapping_and_filters(rules):
     for skipped in (dict(isCancelled=True), dict(isAllDay=True), dict(showAs="free"),
                     dict(responseStatus={"response": "declined"})):
         assert calendar_raw(_event(**skipped)) is None
+
+
+def test_private_meeting_keeps_only_its_time(rules):
+    for sensitivity in ("private", "confidential"):
+        event = transform(calendar_raw(_event(sensitivity=sensitivity)), rules)
+        assert event.sensitivity == "private" and event.category == "private"
+        assert event.title is None and event.url is None and event.attrs == {}
+        assert event.evidence == "scheduled" and event.end_at == "2026-10-22T15:30:00Z"
+    assert transform(calendar_raw(_event(sensitivity="personal")), rules).title == "PDG standup"
 
 
 def test_mail_keeps_domains_not_addresses():
@@ -85,3 +94,21 @@ def test_day_counts_only_the_past_and_calendar_meetings(tmp_path, rules):
     assert d["summary"]["active_min"] == 30
     assert len([b for b in d["blocks"] if b["category"] == "meeting"]) == 2  # upcoming one is still drawn
     assert d["line"].startswith("30m active · 1 meeting")
+
+
+def test_away_in_a_meeting_is_still_active(tmp_path, rules):
+    s = _store(tmp_path)
+    local = datetime(2026, 10, 22, 0, 0).astimezone()
+    at = lambda h, m=0: local + timedelta(hours=h, minutes=m)
+    meeting = lambda i, h, **kw: _event(id=f"m{i}", start={"dateTime": iso(at(h))[:19]},
+                                        end={"dateTime": iso(at(h, 60))[:19]}, **kw)
+    sync(s, rules, [FakeCalendar([meeting(1, 10), meeting(2, 13, sensitivity="private")])], at(18))
+    s.upsert([transform(RawEvent("activitywatch", "afk1", "span", "observed", at(9, 30), at(10, 30),
+                                 category="idle"), rules)], at(18))
+    start, end = day_bounds(date(2026, 10, 22))
+    d = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO, at(18))
+    assert d["summary"]["active_min"] == 120  # both meetings, though away for half of the first
+    assert d["summary"]["counts"]["meetings"] == 1 and d["summary"]["private_min"] == 60
+    assert [(i["start"][11:16], i["end"][11:16]) for i in d["idle"]] == [("09:30", "10:00")]
+    [private] = [b for b in d["blocks"] if b["sensitivity"] == "private"]
+    assert private["group"] == "private" and private["titles"] == [] and private["url"] is None

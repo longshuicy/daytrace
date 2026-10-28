@@ -40,7 +40,7 @@ def classify(raw: RawEvent, rules: Rules) -> tuple[str, str | None]:
     path = Path(raw.path) if raw.path else None
     if not path and raw.owner and raw.repo:
         path = rules.local_clone(raw.owner, raw.repo)
-    if (raw.app in rules.private_apps or rules.matches(rules.private_titles, raw.title)
+    if (raw.private or raw.app in rules.private_apps or rules.matches(rules.private_titles, raw.title)
             or rules.browser_profile(raw.title) in rules.private_profiles
             or (path and rules.is_private_path(path))):
         return ("private", None)

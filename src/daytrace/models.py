@@ -37,6 +37,7 @@ class RawEvent:
     path: str | None = None  # repo or working directory, used for the project and the private check
     owner: str | None = None  # GitHub owner and repo name, for events with no local path
     repo: str | None = None
+    private: bool = False  # the source itself marks it private (an Outlook meeting set to Private)
     attrs: dict = field(default_factory=dict)
 
 
