@@ -52,9 +52,9 @@ def classify(raw: RawEvent, rules: Rules) -> tuple[str, str | None]:
         target = rules.resolve_title(raw.title)
         if target and rules.is_private_path(target):
             return ("private", None)
-        if target:
+        if target and rules.project_for_path(target):
             return ("normal", rules.project_for_path(target))
-    return ("normal", None)
+    return ("normal", rules.project_for_title(raw.title))
 
 
 def transform(raw: RawEvent, rules: Rules) -> Event | None:

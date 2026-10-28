@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -118,6 +119,23 @@ class Store:
                 (end, start),
             )
         return cur.rowcount
+
+    def retag(self, project_for_title: Callable[[str], str | None],
+              is_private: Callable[[str], bool]) -> tuple[int, int]:
+        """Apply title rules to stored events: make the ones a private rule now matches private, as intake would,
+        and give the rest with no project the one their title names. Returns (tagged, made private)."""
+        rows = self.conn.execute(
+            "SELECT id, title, project FROM events WHERE sensitivity = 'normal' AND title IS NOT NULL").fetchall()
+        hidden = [(r["id"],) for r in rows if is_private(r["title"])]
+        gone = {i for i, in hidden}
+        found = [(p, r["id"]) for r in rows
+                 if r["id"] not in gone and not r["project"] and (p := project_for_title(r["title"]))]
+        with self.conn:
+            self.conn.executemany(
+                "UPDATE events SET sensitivity = 'private', category = 'private', project = NULL, title = NULL, "
+                "url = NULL, attrs = '{}' WHERE id = ?", hidden)
+            self.conn.executemany("UPDATE events SET project = ? WHERE id = ?", found)
+        return len(found), len(hidden)
 
     def backup(self, dest: Path) -> None:
         """A consistent copy of the whole database, even while a sync is writing."""

@@ -66,6 +66,12 @@ def cmd_sync(args) -> None:
             print(f"{r.source:<17} FAILED {r.error}", file=sys.stderr)
 
 
+def cmd_retag(args) -> None:
+    store, rules = _open()
+    tagged, hidden = store.retag(rules.project_for_title, lambda t: rules.matches(rules.private_titles, t))
+    print(f"tagged {tagged} events from [project_titles], made {hidden} private from [private] titles")
+
+
 def cmd_today(args) -> None:
     store, rules = _open()
     day = date.fromisoformat(args.date) if args.date else date.today()
@@ -201,6 +207,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--source", action="append", help="only this source (repeatable)")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=cmd_sync)
+
+    sub.add_parser("retag", help="apply [private] and [project_titles] title rules to stored events").set_defaults(
+        func=cmd_retag)
 
     p = sub.add_parser("today", help="show a day")
     p.add_argument("--date", help="YYYY-MM-DD, default today")

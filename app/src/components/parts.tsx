@@ -23,7 +23,7 @@ export function Tile({ label, value, note, extra, children }:
 export function MeetingNotes({ notes, open }: { notes: Note[]; open: (id: string) => void }) {
   const shown = notes.length > 2 ? notes.slice(0, 1) : notes;
   return (
-    <ul className={notes.length === 1 ? "tile-notes one" : "tile-notes"}>
+    <ul className="tile-notes">
       {shown.map((n) => (
         <li key={n.id}>
           <button className="link" title={n.title} onClick={() => open(n.id)}>{n.title || "Untitled note"}</button>
@@ -69,12 +69,30 @@ export function useSort<K extends string>(initial: K, initialDir: Dir = 1) {
   return { header, sorted };
 }
 
+const ROWS = 6;  // rows a card shows before "Show more", so cards side by side stay the same height
+
+/** The first `limit` rows until opened, and the button that opens and closes the rest. */
+function useMore<T>(rows: T[], limit = ROWS) {
+  const [open, setOpen] = useState(false);
+  const extra = rows.length - limit;
+  return {
+    shown: open || extra <= 0 ? rows : rows.slice(0, limit),
+    toggle: extra > 0 ? (
+      <button className="link show-more" onClick={() => setOpen(!open)}>
+        {open ? "Show less" : `Show ${extra} more`}
+      </button>
+    ) : null,
+  };
+}
+
 /** A card of one-line rows: the thing on the left, where and when on the right. */
-export function ListCard({ label, children }: { label: string; children: ReactNode }) {
+function ListCard<T>({ label, items, row }: { label: string; items: T[]; row: (item: T, i: number) => ReactNode }) {
+  const { shown, toggle } = useMore(items);
   return (
     <section className="card hl-card" aria-label={label}>
       <h2 className="hl-label">{label}</h2>
-      <ul className="hl-list">{children}</ul>
+      <ul className="hl-list">{shown.map(row)}</ul>
+      {toggle}
     </section>
   );
 }
@@ -82,22 +100,19 @@ export function ListCard({ label, children }: { label: string; children: ReactNo
 export function ShippedCard({ items, meta }:
   { items: Highlights["shipped"]; meta?: (i: number) => string | null }) {
   return (
-    <ListCard label="Shipped">
-      {items.map((x, i) => (
+    <ListCard label="Shipped" items={items} row={(x, i) => (
         <li key={i}>
           {x.url ? <button className="link hl-main" title={x.title} onClick={() => openUrl(x.url!)}>{x.title}</button>
             : <span className="hl-main" title={x.title}>{x.title}</span>}
           <span className="hl-sub">{[x.project, meta?.(i)].filter(Boolean).join(" · ")}</span>
         </li>
-      ))}
-    </ListCard>
+    )} />
   );
 }
 
 export function WorkingOnCard({ label, items }: { label: string; items: Highlights["working_on"] }) {
   return (
-    <ListCard label={label}>
-      {items.map((w) => (
+    <ListCard label={label} items={items} row={(w) => (
         <li key={`${w.project}/${w.branch}`} className={w.trunk ? "trunk" : undefined}>
           <code className="branch" title={w.branch}>{w.branch}</code>
           <span className="hl-sub">
@@ -105,32 +120,46 @@ export function WorkingOnCard({ label, items }: { label: string; items: Highligh
               w.commits ? `${w.commits} commit${w.commits === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")}
           </span>
         </li>
-      ))}
-    </ListCard>
+    )} />
   );
+}
+
+const UNCLAIMED = { meeting: "meetings with no project", comms: "mail and chat", untagged: "untagged activity" };
+
+function timeNote(r: ProjectRow) {
+  if (r.parts) {
+    return Object.entries(r.parts).sort(([, a], [, b]) => b - a)
+      .map(([why, m]) => `${minutes(m)} ${UNCLAIMED[why as keyof typeof UNCLAIMED]}`).join("\n");
+  }
+  return r.inferred_min
+    ? `${minutes(r.minutes - r.inferred_min)} tagged + ${minutes(r.inferred_min)} inferred from what was around it`
+    : undefined;
 }
 
 export function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   const { header, sorted } = useSort<"project" | "minutes" | "commits" | "prs">("minutes", -1);
+  const { shown, toggle } = useMore(sorted(rows, (r, k) => (k === "project" ? (r.project ?? "other").toLowerCase() : r[k])));
   if (!rows.length) return <div className="empty">No projects yet.</div>;
   const max = Math.max(...rows.map((r) => r.minutes), 1);
   return (
+    <>
     <div className="table-scroll">
       <table className="bars projects">
-        <colgroup><col style={{ width: 120 }} /><col /><col style={{ width: 64 }} /><col style={{ width: 84 }} /><col style={{ width: 44 }} /></colgroup>
+        <colgroup><col style={{ width: 120 }} /><col /><col style={{ width: 68 }} /><col style={{ width: 72 }} /><col style={{ width: 44 }} /></colgroup>
         <thead>
           <tr>
-            {header("project", "Project")}{header("minutes", "Time", undefined, -1)}
-            <th><span className="sr-only">Duration</span></th>
-            {header("commits", "Commits", "num", -1)}{header("prs", "PRs", "num", -1)}
+            {header("project", "Project")}<th><span className="sr-only">Bar</span></th>
+            {header("minutes", "Time", "num", -1)}{header("commits", "Commits", "num", -1)}{header("prs", "PRs", "num", -1)}
           </tr>
         </thead>
         <tbody>
-          {sorted(rows, (r, k) => (k === "project" ? r.project.toLowerCase() : r[k])).map((r) => (
-            <tr key={r.project}>
-              <td className="name" title={r.project}>{r.project}</td>
-              <td className="bar-col"><div className="bar" style={{ width: `${(r.minutes / max) * 100}%` }} /></td>
-              <td className="num">{minutes(r.minutes)}</td>
+          {shown.map((r) => (
+            <tr key={r.project ?? "_other"}>
+              <td className={r.project ? "name" : "name muted"} title={r.project ?? undefined}>{r.project ?? "Other"}</td>
+              <td className="bar-col" title={timeNote(r)}>
+                <div className="bar" style={{ width: `${(r.minutes / max) * 100}%` }} />
+              </td>
+              <td className="num" title={timeNote(r)}>{minutes(r.minutes)}</td>
               <td className="num">{r.commits || ""}</td>
               <td className="num">{r.prs || ""}</td>
             </tr>
@@ -138,19 +167,23 @@ export function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
         </tbody>
       </table>
     </div>
+    {toggle}
+    </>
   );
 }
 
 export function SitesTable({ rows }: { rows: Site[] }) {
+  const { shown, toggle } = useMore(rows);
   if (!rows.length) return <div className="empty">No browsing recorded yet.</div>;
   const max = Math.max(...rows.map((s) => s.minutes), 1);
   return (
+    <>
     <div className="table-scroll">
       <table className="bars sites">
         <colgroup><col style={{ width: 140 }} /><col /><col style={{ width: 52 }} /></colgroup>
-        <thead><tr><th>Site or page</th><th>Time</th><th><span className="sr-only">Duration</span></th></tr></thead>
+        <thead><tr><th>Site or page</th><th><span className="sr-only">Bar</span></th><th className="num">Time</th></tr></thead>
         <tbody>
-          {rows.map((s) => (
+          {shown.map((s) => (
             <tr key={s.site ?? "_other"}>
               <td className={`name${s.site && !s.page ? "" : " muted"}`} title={s.site ?? undefined}>{s.site ?? "Other pages"}</td>
               <td className="bar-col">
@@ -162,6 +195,8 @@ export function SitesTable({ rows }: { rows: Site[] }) {
         </tbody>
       </table>
     </div>
+    {toggle}
+    </>
   );
 }
 

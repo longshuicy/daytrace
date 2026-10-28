@@ -26,7 +26,7 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
     today = now.astimezone().date()
     days, spans, points = [], [], []
     shipped, commits, best = [], None, None
-    projects = defaultdict(Counter)
+    projects, other_parts = defaultdict(Counter), Counter()
     counts = Counter()
     for i in range((last - first).days + 1):
         day = first + timedelta(days=i)
@@ -46,7 +46,9 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
                    emails_sent=s["counts"]["emails_sent"], focus_min=(s["longest"] or {}).get("minutes", 0))
         counts.update({k: v for k, v in s["counts"].items()})
         for p in s["projects"]:
-            projects[p["project"]].update({"minutes": p["minutes"], "commits": p["commits"], "prs": p["prs"]})
+            projects[p["project"]].update({"minutes": p["minutes"], "inferred_min": p["inferred_min"],
+                                           "commits": p["commits"], "prs": p["prs"]})
+            other_parts.update(p.get("parts", {}))
         h = d["highlights"]
         shipped += [{**x, "date": row["date"]} for x in h["shipped"]]
         if h["commits"]:
@@ -86,8 +88,10 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
         "commits": commits,
         "shipped": shipped,
         "working_on": dayjson.working_on(spans, points),
-        "projects": sorted(({"project": p, "minutes": c["minutes"], "commits": c["commits"], "prs": c["prs"]}
-                            for p, c in projects.items()), key=lambda r: (-r["minutes"], r["project"])),
+        "projects": sorted(({"project": p, "minutes": c["minutes"], "inferred_min": c["inferred_min"],
+                             "commits": c["commits"], "prs": c["prs"], **({} if p else {"parts": dict(other_parts)})}
+                            for p, c in projects.items()),
+                           key=lambda r: (-r["minutes"], r["project"] is None, r["project"] or "")),
         "sites": dayjson.sites(spans),
         "story": dayjson.story_view(summarize.current_period(store, kind, first, last)),
     }

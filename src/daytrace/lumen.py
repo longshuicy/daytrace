@@ -16,8 +16,8 @@ Input JSON:
 - "days": one per day with data: active and meeting minutes, first and last activity (local time), "weekend",
   "projects" touched, project "switches", "meetings", "meeting_runs" (back-to-back meetings), "morning_meetings"
   and "morning_free_max_min" (the longest meeting-free stretch between 9:00 and 12:00), "focus" (stretches of 25
-  minutes or more without interruption: when, how long, on what, and what ended it: a meeting, comms (mail or
-  chat), a break, or stopped), and "outside_9_5_min" (active minutes before 9:00 or after 17:00).
+  minutes or more on one thing: when, how long, on what, and what ended it: a meeting, comms (mail or chat), a
+  break, a switch to something else, or stopped), and "outside_9_5_min" (active minutes before 9:00 or after 17:00).
 - "entries": one per project (or for meetings, or a kind of activity without a project): the days it appeared,
   minutes per activity, counts (commits, PRs, wiki edits...), a few titles, sites and git branches.
 - "meetings": meetings with notes: day, time, calendar title (null when it wasn't on the calendar), "topics", and

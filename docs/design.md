@@ -27,7 +27,9 @@ Each adapter (`src/daytrace/adapters/`) implements `fetch(since, until) -> RawEv
 1. Drop incognito/private-browsing windows entirely.
 2. Private check (`[private]` apps, titles, paths, browser profiles): a match keeps only start/end.
 3. Categorize (app → category, browser title → web app) and map path → project (top folder under the most
-   specific `[paths] projects` root; GitHub repos via their local clone).
+   specific `[paths] projects` root; GitHub repos via their local clone). With no path or repo to go by, a
+   `[project_titles]` pattern in the title names the project (meetings, Slack channels, tabs, documents);
+   `daytrace retag` applies new patterns to events already stored.
 4. Scrub secrets from titles (`scrub.py`), strip URL query strings.
 
 Raw ActivityWatch events are purged from ActivityWatch after `[retention] activitywatch_raw_days`.
@@ -51,6 +53,13 @@ Granola URL, file name) and `account.json` (your name as Granola has it, to tell
 
 Stats, episodes and patterns are computed on read (`dayjson.py`, `period.py`, `episodes.py`, `patterns.py`), never
 stored.
+
+Time per project (`dayjson.py: project_time`) gives each active moment to one project or to "Other" (split into
+meetings with no project, mail and chat, and untagged activity), so the rows plus private time add up to active
+time; private time is left out of the card. A calendar meeting owns its time; otherwise a tagged window on screen decides. Two rules
+infer the rest, and inferred time is shown apart: an untagged editor, terminal or Claude window during a Claude
+Code or Cursor session counts for the session's project, and other untagged activity up to 10 minutes long
+between two stretches of the same project counts for it (never meetings, mail, chat or private time).
 
 ## LLM egress
 

@@ -92,8 +92,6 @@ h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
 .tile-notes { list-style: none; margin: 2px 0 0; padding: 0; font-size: 12.5px; line-height: 1.35; }
 .tile-notes li { display: flex; align-items: baseline; gap: 6px; min-width: 0; margin-top: 1px; }
 .tile-notes .more { color: var(--muted); }
-.tile-notes.one .link:first-child { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2; }  /* a lone note gets both lines */
 .tile-notes .link { font: inherit; color: var(--ink-2); text-align: left; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-note .avg-toggle { font: inherit; color: inherit; text-align: left; }
@@ -150,11 +148,12 @@ h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
 
 .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
 @media (max-width: 720px) { .split { grid-template-columns: minmax(0, 1fr); } }
-.projects-card, .sites-card { padding-bottom: 8px; }
+.projects-card, .sites-card { padding-bottom: 8px; display: flex; flex-direction: column; }
 .projects-card h2, .sites-card h2 { margin-bottom: 6px; line-height: 22px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.sort { background: none; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit; }
+.sort { background: none; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit;
+  display: inline-flex; align-items: center; vertical-align: middle; }
 .sort:hover { color: var(--ink); }
 .sort-mark { display: inline-block; width: 12px; font-size: 8px; padding-left: 3px; vertical-align: 1px; }
 /* The mark goes before the label so the label ends flush with the numbers below it. */
@@ -173,6 +172,7 @@ table.sites { min-width: 280px; }
 .bars .name, .bars .bar-col { padding-right: 12px; }
 .bars .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar { height: 6px; border-radius: 3px; background: var(--bar); min-width: 2px; }
+.show-more { align-self: flex-start; margin-top: auto; padding: 10px 0 6px; font-size: 13px; color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Week and month */

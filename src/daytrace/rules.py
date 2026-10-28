@@ -66,6 +66,11 @@ categories = [
 # Top-level folder under a project root -> project key. Unlisted folders use their lowercased name.
 "INCORE-2.0" = "incore"
 
+[project_titles]
+# Project key -> patterns (case-insensitive) for titles that name it with no folder to go by: meetings,
+# chat channels, browser tabs, documents. Checked in order when nothing else names a project.
+# "incore" = ["in-?core"]
+
 [git]
 roots = ["~/Documents/Projects"]
 max_depth = 3
@@ -114,6 +119,7 @@ class Rules:
     git_authors: list[str]
     activitywatch_raw_days: int
     title_categories: list[tuple[re.Pattern, str]] = field(default_factory=list)
+    project_titles: list[tuple[re.Pattern, str]] = field(default_factory=list)
     _remotes: dict[Path, str | None] = field(default_factory=dict, repr=False)
     _repos: dict[str, Path] | None = field(default=None, repr=False)
 
@@ -137,6 +143,8 @@ class Rules:
             git_authors=[e.lower() for e in git.get("author_emails", [])],
             activitywatch_raw_days=retention.get("activitywatch_raw_days", 7),
             title_categories=[(re.compile(p), c) for p, c in titles.get("categories", [])],
+            project_titles=[(re.compile(p, re.I), project)
+                            for project, patterns in d.get("project_titles", {}).items() for p in patterns],
         )
 
     @classmethod
@@ -161,6 +169,10 @@ class Rules:
             return None
         rel = path.relative_to(root).parts
         return self.projects.get(rel[0], rel[0].lower()) if rel else None
+
+    def project_for_title(self, title: str | None) -> str | None:
+        """The project a [project_titles] pattern finds in a title, if any."""
+        return next((project for pattern, project in self.project_titles if title and pattern.search(title)), None)
 
     def local_clone(self, owner: str, repo: str) -> Path | None:
         """The local clone of a GitHub repo: matched by origin remote, else by folder name."""

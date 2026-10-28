@@ -27,6 +27,13 @@ AWAY = timedelta(minutes=5)          # so does being away from the keyboard long
 MIN_SITE = timedelta(minutes=1)
 MIN_BLOCK = timedelta(seconds=30)  # shorter blocks would read "0m"; they still count toward the totals
 MAX_SITES = 8
+SESSIONS = ("claude_code", "cursor")  # agent chats: they run on while you look at something else
+HANDS_ON = ("code", "terminal")       # on screen during a session, these are taken as working in it
+NO_BORROW = ("meeting", "email", "chat", "private")  # count toward a project only when their own title names it
+BORROW_MAX = timedelta(minutes=10)   # untagged stretches up to this long take the project on both sides of them
+DETOUR = timedelta(minutes=10)       # time on something else that doesn't end a focus stretch
+GLANCE = timedelta(seconds=30)       # a return to the thing shorter than this doesn't carry its stretch on
+FOCUS_SHARE = 0.6                    # a focus stretch spends at least this much of its time on its thing
 SHIPPED = ("pr", "release", "wiki", "issue")  # traces that put something out into the world
 TRUNKS = ("main", "master", "develop", "HEAD")  # listed last in "Working on": they don't name a thread of work
 
@@ -80,11 +87,9 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
     # Stats only count what has happened: scheduled time after now is not time spent.
     spans = [(r, s, min(e, now)) for r, s, e in spans if min(e, now) > s]
     private = [(s, e) for r, s, e in spans if r["sensitivity"] == "private"]
-    by_group, by_project = defaultdict(list), defaultdict(list)
+    by_group = defaultdict(list)
     for r, s, e in spans:
         by_group[group_of(r["category"], r["sensitivity"])].append((s, e))
-        if r["project"]:
-            by_project[r["project"]].append((s, e))
 
     point_counts = Counter(p["category"] for p in points if p["sensitivity"] != "private")
     project_points = defaultdict(Counter)
@@ -92,8 +97,23 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
         if p["project"]:
             project_points[p["project"]][p["category"]] += 1
 
-    projects = sorted(set(by_project) | set(project_points),
-                      key=lambda p: (-total(by_project.get(p, [])), p))
+    by_project, unclaimed = project_time(spans)
+    zero = {"minutes": timedelta(0), "inferred": timedelta(0)}
+    project_rows = [{
+        "project": p,
+        "minutes": _minutes(by_project.get(p, zero)["minutes"]),
+        "inferred_min": _minutes(by_project.get(p, zero)["inferred"]),
+        "commits": project_points[p]["commit"],
+        "prs": project_points[p]["pr"],
+        "reviews": project_points[p]["review"],
+    } for p in set(by_project) | set(project_points)]
+    # Private time is no project's and nobody's business, so it is left out rather than shown as Other.
+    other = {why: _minutes(td) for why, td in unclaimed.items() if why != "private" and _minutes(td)}
+    if other:
+        project_rows.append({"project": None, "minutes": _minutes(sum(
+            (td for why, td in unclaimed.items() if why != "private"), timedelta(0))), "inferred_min": 0,
+            "commits": 0, "prs": 0, "reviews": 0, "parts": other})
+    project_rows.sort(key=lambda r: (-r["minutes"], r["project"] is None, r["project"] or ""))
     longest = _longest_focus(spans, idle)
     # Meetings come from the calendar; Zoom windows seen by ActivityWatch would double count.
     calendar = [(s, e) for r, s, e in spans if r["kind"] == "plan" and r["sensitivity"] != "private"]
@@ -106,13 +126,7 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
         "private_min": _minutes(total(private)),
         "idle_min": _minutes(total(idle)),
         "groups": {k: _minutes(total(v)) for k, v in by_group.items()},
-        "projects": [{
-            "project": p,
-            "minutes": _minutes(total(by_project.get(p, []))),
-            "commits": project_points[p]["commit"],
-            "prs": project_points[p]["pr"],
-            "reviews": project_points[p]["review"],
-        } for p in projects],
+        "projects": project_rows,
         "longest": longest,
         "counts": {
             "commits": point_counts["commit"], "prs": point_counts["pr"],
@@ -195,6 +209,96 @@ def working_on(spans: list, points: list) -> list[dict]:
             for p, b in set(branches) | set(commits)]
     return sorted((w for w in rows if w["minutes"] or w["commits"]),
                   key=lambda w: (w["trunk"], -w["minutes"], -w["commits"], w["project"] or "", w["branch"]))
+
+
+def project_time(spans: list) -> tuple[dict[str, dict], dict[str, timedelta]]:
+    """Active time per project, each moment counted once, and the rest by why no project claims it.
+    Returns ({project: {"minutes": timedelta, "inferred": timedelta}}, {why: timedelta}), why being "meeting",
+    "comms" (mail and chat), "private" or "untagged"; the two together add up to active time.
+
+    A calendar meeting owns its time (its project, else none). Otherwise what is on screen decides: a window
+    with a project counts for it. An untagged editor, terminal or Claude window during an agent session (Claude
+    Code, Cursor) counts for the session's project, inferred. Other untagged activity of 10 minutes or less
+    between two stretches of the same project counts for it, inferred, except meetings, mail, chat and private
+    time. Moments shared by several projects are split evenly.
+    """
+    segments = [[a, b, _owners(rows)] for a, b, rows in _moments(spans)]
+
+    for j, seg in enumerate(segments):
+        if seg[2] is not None:
+            continue
+        k = j
+        while k + 1 < len(segments) and segments[k + 1][2] is None:
+            k += 1
+        before, after = _sole(segments[j - 1] if j else None), _sole(segments[k + 1] if k + 1 < len(segments) else None)
+        near = (j > 0 and k + 1 < len(segments) and seg[0] - segments[j - 1][1] <= STRETCH_GAP
+                and segments[k + 1][0] - segments[k][1] <= STRETCH_GAP)
+        borrowed = before if near and before and before == after and segments[k][1] - seg[0] <= BORROW_MAX else None
+        for run in segments[j:k + 1]:
+            run[2] = [(borrowed, borrowed is not None)] if borrowed else [("untagged", None)]
+
+    out = defaultdict(lambda: {"minutes": timedelta(0), "inferred": timedelta(0)})
+    unclaimed = defaultdict(timedelta)
+    for a, b, owners in segments:
+        for owner, inferred in owners:
+            share = (b - a) / len(owners)
+            if inferred is None:
+                unclaimed[owner] += share
+                continue
+            out[owner]["minutes"] += share
+            if inferred:
+                out[owner]["inferred"] += share
+    return dict(out), dict(unclaimed)
+
+
+def _moments(spans: list):
+    """(start, end, rows) for each stretch of time in which the same spans are running, in time order."""
+    edges = sorted({t for _, s, e in spans for t in (s, e)})
+    order = sorted(spans, key=lambda x: x[1])
+    cover, i = [], 0
+    for a, b in zip(edges, edges[1:]):
+        while i < len(order) and order[i][1] <= a:
+            cover.append(order[i])
+            i += 1
+        cover = [x for x in cover if x[2] > a]
+        if cover:
+            yield a, b, [r for r, _, _ in cover]
+
+
+def _owners(rows: list) -> list[tuple[str, bool | None]] | None:
+    """Who owns a moment covered by these rows, as shares: (project, inferred), or (why, None) when no project
+    does. None when its neighbors decide."""
+    def split(rs: list, inferred: bool, why: str) -> list[tuple[str, bool | None]]:
+        return list(dict.fromkeys((r["project"], inferred) if r["project"] else
+                                  ("private" if r["sensitivity"] == "private" else why, None) for r in rs))
+
+    plans = [r for r in rows if r["kind"] == "plan"]
+    if plans:
+        return split(plans, False, "meeting")
+    shown = [r for r in rows if r["source"] not in SESSIONS]
+    sessions = [r for r in rows if r["source"] in SESSIONS and r["project"]]
+    if any(r["project"] for r in shown):
+        return split([r for r in shown if r["project"]], False, "untagged")
+    if not shown:
+        return split(sessions, False, "untagged") if sessions else [_unclaimed(rows)]
+    if any(r["sensitivity"] == "private" or r["category"] in NO_BORROW for r in shown):
+        return [_unclaimed(shown)]
+    if sessions and any(r["category"] in HANDS_ON for r in shown):
+        return split(sessions, True, "untagged")
+    return None
+
+
+def _unclaimed(rows: list) -> tuple[str, None]:
+    """Why no project claims a moment: private time first, then meetings, then mail and chat."""
+    groups = {group_of(r["category"], r["sensitivity"]) for r in rows}
+    return (next((g for g in ("private", "meeting", "comms") if g in groups), "untagged"), None)
+
+
+def _sole(segment: list | None) -> str | None:
+    """The one project a segment went to, if it went to exactly one."""
+    if not segment or not segment[2] or len(segment[2]) != 1 or segment[2][0][1] is None:
+        return None
+    return segment[2][0][0]
 
 
 def sites(spans: list) -> list[dict]:
@@ -281,7 +385,7 @@ def attach_notes(blocks: list[dict], notes: list[dict]) -> list[dict]:
 
 
 def _longest_focus(spans: list, idle: list) -> dict | None:
-    """Longest stretch of activity without interruptions, labeled by what took most of it (see focus_stretches)."""
+    """Longest stretch of time on one thing (see focus_stretches)."""
     stretches = focus_stretches(spans, idle)
     if not stretches:
         return None
@@ -290,13 +394,15 @@ def _longest_focus(spans: list, idle: list) -> dict | None:
 
 
 def focus_stretches(spans: list, idle: list) -> list[dict]:
-    """Stretches of activity without interruptions, in time order, each labeled by what took most of it and with
-    what ended it: "meeting", "comms" (mail or chat), "break" (private time or away) or "stopped" (nothing tracked).
+    """Stretches of time on one thing, in time order, each with what ended it: "meeting", "comms" (mail or chat),
+    "break" (private time or away), "switch" (moved on to something else) or "stopped" (nothing tracked).
 
-    Any non-private activity outside meetings and mail counts (code, docs, PDFs, the browser), with gaps under
-    5 minutes joined. Meetings, mail, chat or private time of 2 minutes or more, and more than 5 minutes away
-    from the keyboard, cut a stretch. The label is the project with the most time in it, else a document, else
-    a site, else an app, decided per span.
+    The thing is what is on screen, as project_time reads it: a project, else a document, else a site, else an
+    app; an agent session counts only while its editor, terminal or Claude window is in front. Stretches don't
+    overlap: one runs from its first to its last moment on its thing, through detours to anything else of up to
+    10 minutes of activity (a lookup, a glance at chat), and spends at least 60% of its time on the thing; returns
+    to it under 30 seconds don't carry it on. Hopping between many things is no focus at all. Meetings, mail,
+    chat or private time of 2 minutes or more, and more than 5 minutes away from the keyboard, cut a stretch.
     """
     work, breaks = [], [(s, e, "break") for s, e in idle if e - s > AWAY]
     for r, s, e in spans:
@@ -308,20 +414,50 @@ def focus_stretches(spans: list, idle: list) -> list[dict]:
             work.append((r, s, e))
     merged = merge([(s, e) for s, e, _ in breaks])
     segments = [seg for iv in merge([(s, e) for _, s, e in work], gap=STRETCH_GAP) for seg in _cut(iv, merged)]
+    moments = []
+    for a, b, rows in _moments(work):
+        key = _subject(rows)
+        if moments and moments[-1][2] == key and a - moments[-1][1] < STRETCH_GAP:
+            moments[-1][1] = b
+        else:
+            moments.append([a, b, key])
     out = []
-    for s0, e0 in sorted(segments):
-        weight = defaultdict(timedelta)
-        for r, s, e in work:
-            a, b = max(s, s0), min(e, e0)
-            if b > a:
-                weight[_focus_key(r)] += b - a
-        if not weight:
-            continue
-        kind, label = max(weight, key=weight.get)
+    for s0, e0 in segments:
+        blocks = [(max(a, s0), min(b, e0), key) for a, b, key in moments if a < e0 and b > s0]
+        runs, i = [], 0
+        while i < len(blocks):
+            start, end, key = blocks[i]
+            on, last, detour, j = end - start, i, timedelta(0), i + 1
+            while j < len(blocks) and detour <= DETOUR:
+                length = blocks[j][1] - blocks[j][0]
+                if blocks[j][2] == key and length >= GLANCE:
+                    end, last, detour, on = blocks[j][1], j, timedelta(0), on + length
+                else:
+                    detour += length
+                j += 1
+            if on >= FOCUS_SHARE * (end - start):
+                runs.append((start, end, key))
+                i = last + 1
+            else:
+                i += 1
         enders = sorted((bs, why) for bs, be, why in breaks if bs <= e0 < be)
-        out.append({"label": label, "kind": kind, "minutes": _minutes(e0 - s0), "start": _local(s0),
-                    "end": _local(e0), "ended_by": enders[0][1] if enders else "stopped", "_length": e0 - s0})
-    return out
+        for s, e, (kind, label) in runs:
+            ended = (enders[0][1] if enders else "stopped") if e0 - e <= STRETCH_GAP else "switch"
+            out.append({"label": label, "kind": kind, "minutes": _minutes(e - s), "start": _local(s),
+                        "end": _local(e), "ended_by": ended, "_length": e - s})
+    return sorted(out, key=lambda f: f["start"])
+
+
+def _subject(rows: list) -> tuple[str, str]:
+    """What a moment of work is on: what is on screen, with an agent session only behind its own window."""
+    shown = [r for r in rows if r["source"] not in SESSIONS]
+    sessions = [r for r in rows if r["source"] in SESSIONS and r["project"]]
+    tagged = [r for r in shown if r["project"]]
+    if tagged:
+        return ("project", tagged[0]["project"])
+    if sessions and (not shown or any(r["category"] in HANDS_ON for r in shown)):
+        return ("project", sessions[0]["project"])
+    return _focus_key(shown[0] if shown else rows[0])
 
 
 def _cut(interval: tuple, breaks: list) -> list[tuple]:
@@ -345,8 +481,8 @@ def _focus_key(r) -> tuple[str, str]:
         return ("project", r["project"])
     if r["category"] in ("docs", "wiki") and r["title"]:
         return ("document", r["title"])
-    if attrs.get("site"):
-        return ("site", attrs["site"])
+    if page_name(r, attrs):
+        return ("site", page_name(r, attrs))
     return ("app", attrs.get("app") or r["category"])
 
 

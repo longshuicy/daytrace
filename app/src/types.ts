@@ -58,8 +58,10 @@ export interface Source {
 }
 
 export interface ProjectRow {
-  project: string;
+  project: string | null;  // null is "Other": time no project claims
   minutes: number;
+  inferred_min: number;    // part of minutes borrowed from an agent session or the activity around it
+  parts?: Partial<Record<"meeting" | "comms" | "untagged", number>>;  // Other only: why no project claims it
   commits: number;
   prs: number;
   reviews: number;

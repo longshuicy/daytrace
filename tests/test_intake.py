@@ -31,6 +31,27 @@ def test_terminal_title_with_path(rules, projects):
     assert classify(window("iTerm2", f"zsh {projects}/PDG"), rules) == ("normal", "pdg")
 
 
+def test_project_titles_name_a_project_when_nothing_else_does(rules, projects, tmp_path):
+    from daytrace.rules import Rules
+    from daytrace.store import Store
+
+    rules.project_titles = Rules.from_text('[project_titles]\n"illinois chat" = ["illinois.?chat"]\n').project_titles
+    meeting = RawEvent("outlook_calendar", "m", "plan", "observed", T0, title="Illinois Chat Design")
+    assert classify(meeting, rules) == ("normal", "illinois chat")
+    assert classify(window("Slack", "illinois-chat-dev (Channel) - Slack"), rules) == ("normal", "illinois chat")
+    assert classify(window("iTerm2", f"illinois-chat {projects}/PDG"), rules) == ("normal", "pdg")  # a path wins
+
+    s = Store(tmp_path / "t.db")
+    named = rules.project_titles
+    rules.project_titles = []
+    s.upsert([transform(window("Slack", "illinois-chat-dev"), rules),
+              transform(RawEvent("outlook_calendar", "c", "plan", "observed", T0, title="Counselling"), rules)], T0)
+    rules.project_titles = named
+    assert s.retag(rules.project_for_title, lambda t: t == "Counselling") == (1, 1)
+    rows = s.conn.execute("SELECT project, sensitivity, title FROM events ORDER BY source").fetchall()
+    assert [tuple(r) for r in rows] == [("illinois chat", "normal", "illinois-chat-dev"), (None, "private", None)]
+
+
 def test_anything_not_private_is_normal(rules):
     assert classify(window("Code", "scratch.py"), rules) == ("normal", None)
     assert classify(window("Google Chrome", "Some recipe blog"), rules) == ("normal", None)

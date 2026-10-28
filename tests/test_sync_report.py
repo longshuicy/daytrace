@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import date, datetime, timedelta
 
 from daytrace.models import UTC, RawEvent, iso
@@ -206,6 +207,31 @@ def test_focus_counts_reading_and_breaks_on_interruptions(tmp_path, rules):
     assert (longest["label"], longest["kind"], longest["minutes"]) == ("flood-model-review.pdf", "document", 68)
 
 
+def test_focus_is_time_on_one_thing_not_a_busy_hour(tmp_path, rules, projects):
+    from daytrace import dayjson, period
+
+    s = store(tmp_path)
+    nine = datetime(2026, 10, 22, 9, 0).astimezone()
+    m = lambda n: nine + timedelta(minutes=n)
+    session = RawEvent("claude_code", "bg", "span", "recorded", m(0), m(55), category="code",
+                       path=str(projects / "PDG"))
+    hops = [raw(f"hop{n}", m(70 + n), 1, app="Google Chrome", title=f"Page {'abc'[n % 3]}") for n in range(30)]
+    sync(s, rules, [Fake("claude_code", [session])], m(200))
+    sync(s, rules, [Fake("aw", [
+        raw("doc1", m(0), 25, app="Google Chrome", title="Plan - Google Docs"),
+        raw("claude", m(25), 5, app="Claude", title="Claude"),  # the session's window: a short detour
+        raw("doc2", m(30), 25, app="Google Chrome", title="Plan - Google Docs"),
+        *hops,                                                   # three pages in turn: no focus on any
+    ])], m(200))
+    start, end = day_bounds(date(2026, 10, 22))
+    rows = s.events_between(iso(start), iso(end))
+    longest = dayjson.build(date(2026, 10, 22), rows, {}, {}, ZERO, m(200))["summary"]["longest"]
+    # The background session ran all along, but the document was on screen.
+    assert (longest["label"], longest["minutes"]) == ("Plan - Google Docs", 55)
+    stretches = dayjson.focus_stretches(period._spans(rows, start, end, m(200)), [])
+    assert [f["label"] for f in stretches if f["minutes"] >= 5] == ["Plan - Google Docs"]
+
+
 def test_period_week_matches_its_days(tmp_path, rules, projects):
     from daytrace import dayjson, period
 
@@ -228,8 +254,39 @@ def test_period_week_matches_its_days(tmp_path, rules, projects):
     assert [d["future"] for d in p["days"]] == [False] * 5 + [True, True]
     assert p["elapsed"] == 5
     assert p["totals"]["active_min"] == day["summary"]["active_min"] == 40
-    assert p["projects"] == [{"project": "pdg", "minutes": 40, "commits": 1, "prs": 0}]
+    assert p["projects"] == [{"project": "pdg", "minutes": 40, "inferred_min": 0, "commits": 1, "prs": 0}]
     assert p["focus"]["date"] == "2026-10-22"
+
+
+def test_project_time_counts_each_moment_once_and_infers_the_rest(tmp_path, rules, projects):
+    from daytrace import dayjson
+
+    s = store(tmp_path)
+    nine = datetime(2026, 10, 22, 9, 0).astimezone()
+    m = lambda n: nine + timedelta(minutes=n)
+    pdg, incore = str(projects / "PDG"), str(projects / "INCORE-2.0/incore-helm")
+    session = lambda sid, start, minutes, path: RawEvent("claude_code", sid, "span", "recorded", m(start),
+                                                         m(start + minutes), category="code", path=path)
+    rules.project_titles = [(re.compile("pdg weekly", re.I), "pdg")]
+    sync(s, rules, [Fake("claude_code", [session("a", 0, 30, pdg), session("b", 60, 20, pdg),
+                                         session("c", 60, 20, incore)])], m(300))
+    sync(s, rules, [Fake("aw", [
+        raw("claude", m(0), 20, app="Claude", title="Claude"),               # during a pdg session: pdg, inferred
+        raw("docs", m(20), 5, app="Google Chrome", title="Python docs"),     # between pdg and pdg: pdg, inferred
+        raw("code", m(25), 10, app="Code", title=f"x — {pdg}"),              # tagged: pdg
+        raw("slack", m(35), 5, app="Slack", title="general"),                # chat never borrows: Other
+        raw("term", m(60), 20, app="iTerm2", title="zsh"),                   # two sessions: split pdg/incore
+        raw("miro", m(100), 30, app="Google Chrome", title="Board - Miro"),  # nothing around it: Other
+        RawEvent("aw", "meet", "plan", "observed", m(130), m(160), category="meeting", title="PDG weekly"),
+        raw("cal-code", m(130), 30, app="Code", title=f"x — {incore}"),      # the meeting owns its time
+        raw("song", m(200), 10, app="Spotify", title="song"),                # private: left out of projects
+    ])], m(300))
+    start, end = day_bounds(date(2026, 10, 22))
+    d = dayjson.build(date(2026, 10, 22), s.events_between(iso(start), iso(end)), {}, {}, ZERO, m(300))
+    rows = [(r["project"], r["minutes"], r["inferred_min"]) for r in d["summary"]["projects"]]
+    assert rows == [("pdg", 75, 35), (None, 35, 0), ("incore", 10, 10)]  # Other ranks by time too
+    assert d["summary"]["projects"][1]["parts"] == {"comms": 5, "untagged": 30}
+    assert sum(m for _, m, _ in rows) + d["summary"]["private_min"] == d["summary"]["active_min"]
 
 
 def test_period_average_counts_workdays_by_default(tmp_path, rules, projects):
