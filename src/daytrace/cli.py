@@ -64,6 +64,8 @@ def cmd_sync(args) -> None:
             print(f"{r.source:<17} {r.stored} events{extra}")
         elif not r.ok:
             print(f"{r.source:<17} FAILED {r.error}", file=sys.stderr)
+        if r.warning:
+            print(f"{r.source:<17} WARNING {r.warning}", file=sys.stderr)
 
 
 def cmd_retag(args) -> None:
@@ -144,6 +146,7 @@ def cmd_status(args) -> None:
             last, state = "not configured", ""
         else:
             state = "" if not st or st["ok"] else f"  FAILED {st['error']}"
+            state += f"  WARNING {st['warning']}" if st and st.get("warning") else ""
         print(f"{adapter.name:<17} {counts.get(adapter.name, 0):>6} events  {last}{state}")
     print(f"agent             {'installed' if launchd.plist_path().exists() else 'not installed'}")
 

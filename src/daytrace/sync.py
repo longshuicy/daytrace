@@ -24,6 +24,7 @@ class SyncResult:
     purged: int = 0
     removed: int = 0
     error: str | None = None
+    warning: str | None = None  # synced fine, but the source itself looks broken
     configured: bool = True
     at: str = ""
 
@@ -61,6 +62,8 @@ def sync(store: Store, rules: Rules, adapters: list[Adapter], now: datetime) -> 
                 result.removed = store.replace_window(adapter.name, iso(w0), iso(w1), {e.id for e in events})
             store.set_cursor(adapter.name, iso(now), now)
             result.purged = _purge_raw(store, rules, adapter, zero, now)
+            check = getattr(adapter, "check", None)
+            result.warning = check() if check else None
         except NotConfigured as exc:
             result.configured, result.error = False, str(exc)
         except Exception as exc:  # one failing source must not stop the others

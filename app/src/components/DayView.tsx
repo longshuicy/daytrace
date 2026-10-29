@@ -4,7 +4,7 @@ import { backup, syncNow, useDay } from "../api";
 import {
   GROUP_LABEL, LANES, SOURCE_LABEL, clock, colorVar, longDate, minutes, shiftDate, today,
 } from "../format";
-import type { Day, Note, PeriodKind } from "../types";
+import type { Day, Note, PeriodKind, Source } from "../types";
 import DatePicker from "./DatePicker";
 import DayClock from "./DayClock";
 import { NotePanel } from "./NotePanel";
@@ -187,16 +187,21 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
   );
 }
 
-/** Shown only when a configured source failed its last sync. */
+/** Shown only when a configured source failed its last sync or reported itself broken. */
 function SyncAlert({ day }: { day: Day }) {
   const failing = day.sources.filter((src) => src.configured !== false && !src.ok);
-  if (!failing.length) return null;
+  const warned = day.sources.filter((src) => src.configured !== false && src.ok && src.warning);
+  if (!failing.length && !warned.length) return null;
+  const label = (src: Source) => SOURCE_LABEL[src.name] ?? src.name;
   return (
     <div className="notice error">
-      Sync failed for {failing.map((src) => SOURCE_LABEL[src.name] ?? src.name).join(", ")}, so this day may be
-      incomplete.
+      {failing.length > 0 && <>Sync failed for {failing.map(label).join(", ")}, so this day may be incomplete.</>}
+      {failing.length === 0 && <>Some tracking stopped, so this day may be incomplete.</>}
       {failing.map((src) => src.error && (
-        <div key={src.name} className="muted error-detail">{SOURCE_LABEL[src.name] ?? src.name}: {src.error}</div>
+        <div key={src.name} className="muted error-detail">{label(src)}: {src.error}</div>
+      ))}
+      {warned.map((src) => (
+        <div key={src.name} className="muted error-detail">{label(src)}: {src.warning}</div>
       ))}
     </div>
   );

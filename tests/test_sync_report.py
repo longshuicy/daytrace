@@ -59,6 +59,18 @@ def test_failing_source_does_not_stop_others(tmp_path, rules):
     assert json.loads(s.get_meta("status:bad"))["error"].startswith("ConnectionError")
 
 
+def test_source_check_is_reported_as_a_warning(tmp_path, rules):
+    s = store(tmp_path)
+
+    class Broken(Fake):
+        def check(self):
+            return "watcher stopped"
+
+    results = sync(s, rules, [Broken("aw"), Fake("ok")], ZERO + timedelta(hours=1))
+    assert [(r.ok, r.warning) for r in results] == [(True, "watcher stopped"), (True, None)]
+    assert json.loads(s.get_meta("status:aw"))["warning"] == "watcher stopped"
+
+
 def test_upsert_extends_growing_span(tmp_path, rules):
     s = store(tmp_path)
     start = ZERO + timedelta(hours=1)

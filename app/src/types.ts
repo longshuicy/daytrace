@@ -54,6 +54,7 @@ export interface Source {
   ok: boolean;
   configured?: boolean;
   error: string | null;
+  warning?: string | null;  // synced, but the source itself looks broken (e.g. a stopped watcher)
   at: string;
 }
 

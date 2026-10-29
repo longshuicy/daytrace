@@ -6,7 +6,7 @@ import "./pill.css";
 
 const SIZE = 72;
 
-/** The floating window: today's day clock, a warning dot when a source fails to sync. */
+/** The floating window: today's day clock, a warning dot when a source fails to sync or reports itself broken. */
 export default function Pill() {
   const { day, error, syncing } = useDay();
   const down = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
@@ -27,16 +27,17 @@ export default function Pill() {
     down.current = null;
   };
 
-  const failing = day?.sources.filter((s) => s.configured !== false && !s.ok) ?? [];
+  const failing = day?.sources.filter((s) => s.configured !== false && (!s.ok || s.warning)) ?? [];
   const title = error ? "daytrace can't read today's data"
     : !day ? "Loading…"
-    : [day.line, syncing && "syncing…", ...failing.map((s) => `sync failed: ${s.name}`)].filter(Boolean).join("\n");
+    : [day.line, syncing && "syncing…",
+      ...failing.map((s) => s.ok ? `${s.name}: ${s.warning}` : `sync failed: ${s.name}`)].filter(Boolean).join("\n");
 
   return (
     <div className="pill" onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
       title={`${title}\n\nClick for the day view · drag to move`}>
       {day ? <DayClock day={day} size={SIZE} compact /> : <div className="pill-empty muted">{error ? "!" : "…"}</div>}
-      {failing.length > 0 && <span className="pill-warn" aria-label={`${failing.length} sources failed to sync`} />}
+      {failing.length > 0 && <span className="pill-warn" aria-label={`${failing.length} sources need attention`} />}
     </div>
   );
 }

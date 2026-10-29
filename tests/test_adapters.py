@@ -3,7 +3,7 @@ import sqlite3
 import subprocess
 from datetime import datetime, timedelta
 
-from daytrace.adapters.activitywatch import to_raw
+from daytrace.adapters.activitywatch import stalled, to_raw
 from daytrace.adapters.claude_code import parse_session_file
 from daytrace.adapters.cursor import Cursor
 from daytrace.adapters.git import Git, parse_shortstat
@@ -23,6 +23,20 @@ def test_activitywatch_window_and_afk():
     afk["data"]["status"] = "not-afk"
     assert to_raw("aw-watcher-afk_host", "afkstatus", afk) is None
     assert to_raw("b", "currentwindow", {**e, "duration": 0}) is None
+
+
+def test_activitywatch_flags_a_stopped_window_watcher():
+    def buckets(window, afk="2026-10-29T18:40:00+00:00"):
+        b = {"afk": {"type": "afkstatus", "last_updated": afk}}
+        if window is not None:
+            b["window"] = {"type": "currentwindow", "last_updated": window}
+        return b
+
+    assert stalled(buckets("2026-10-29T18:39:59.5+00:00")) is None
+    assert stalled(buckets("2026-10-29T18:20:00+00:00")) is None  # within the slack
+    assert "stopped reporting" in stalled(buckets("2026-10-28T22:08:47.738000+00:00"))
+    assert "isn't running" in stalled(buckets(None))
+    assert stalled({"window": {"type": "currentwindow", "last_updated": "2026-10-28T22:08:47+00:00"}}) is None
 
 
 def _line(ts, kind="user", prompt="p1", cwd="/w/PDG", session="s1"):

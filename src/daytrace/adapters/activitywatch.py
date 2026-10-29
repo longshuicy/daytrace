@@ -10,6 +10,7 @@ from ..models import RawEvent, iso, parse_iso
 
 DEFAULT_URL = "http://localhost:5600/api/0"
 WATCHED_TYPES = ("currentwindow", "afkstatus")
+STALE = timedelta(minutes=30)  # a watcher this far behind the others has stopped while the machine was awake
 
 
 class ActivityWatch:
@@ -46,6 +47,9 @@ class ActivityWatch:
                 if raw:
                     yield raw
 
+    def check(self) -> str | None:
+        return stalled(self.buckets())
+
     def purge(self, before: datetime, since: datetime,
               ingested: Callable[[list[str]], set[str]]) -> int:
         """Delete raw ActivityWatch events in [since, before) that daytrace has already stored."""
@@ -61,6 +65,21 @@ class ActivityWatch:
                     self._request(path, method="DELETE")
                     deleted += 1
         return deleted
+
+
+def stalled(buckets: dict[str, dict]) -> str | None:
+    """A warning when the window watcher has stopped reporting while the AFK watcher kept going, e.g. after
+    its macOS helper was killed. Asleep or shut down, both stop together, so that isn't flagged."""
+    updated = {b["type"]: parse_iso(b["last_updated"]) for b in buckets.values() if b.get("last_updated")}
+    if "afkstatus" not in updated:
+        return None
+    if "currentwindow" not in updated:
+        return "the window watcher isn't running, so window time isn't recorded; restart ActivityWatch"
+    if updated["afkstatus"] - updated["currentwindow"] > STALE:
+        since = updated["currentwindow"].astimezone()
+        return (f"the window watcher stopped reporting at {since:%m-%d %H:%M}, so window time since then is "
+                "missing; restart ActivityWatch")
+    return None
 
 
 def to_raw(bucket_id: str, bucket_type: str, e: dict) -> RawEvent | None:
