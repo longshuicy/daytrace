@@ -107,12 +107,12 @@ def test_git_reads_own_commits(rules, projects, monkeypatch):
     repo = projects / "PDG"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     env = {"GIT_AUTHOR_DATE": "2026-10-22T14:00:00Z", "GIT_COMMITTER_DATE": "2026-10-22T14:00:00Z"}
-    for email, msg in [("me@illinois.edu", "Fix helm values"), ("other@x.org", "Not mine")]:
+    for email, msg in [("me@example.edu", "Fix helm values"), ("other@x.org", "Not mine")]:
         (repo / f"{msg}.txt").write_text(msg)
         subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
         subprocess.run(["git", "-C", str(repo), "-c", f"user.email={email}", "-c", "user.name=x",
                         "commit", "-q", "-m", msg], check=True, env={**env, "PATH": "/usr/bin:/bin"})
-    rules.git_authors = ["me@illinois.edu"]
+    rules.git_authors = ["me@example.edu"]
     since = datetime(2026, 10, 22, tzinfo=UTC)
     commits = list(Git(rules).fetch(since, since + timedelta(days=1)))
     assert [c.title for c in commits] == ["Fix helm values"]
@@ -120,7 +120,7 @@ def test_git_reads_own_commits(rules, projects, monkeypatch):
     assert commits[0].attrs["branch"] in ("main", "master")
 
     # A rewritten copy on another branch (rebase, cherry-pick) has a new SHA but is the same work.
-    git = ["git", "-C", str(repo), "-c", "user.email=me@illinois.edu", "-c", "user.name=x"]
+    git = ["git", "-C", str(repo), "-c", "user.email=me@example.edu", "-c", "user.name=x"]
     subprocess.run(git + ["checkout", "-q", "-b", "copy", "HEAD~1"], check=True)
     later = {**env, "GIT_COMMITTER_DATE": "2026-10-22T16:00:00Z", "PATH": "/usr/bin:/bin"}
     subprocess.run(git + ["commit", "-q", "--amend", "--no-edit"], check=True, env=later)

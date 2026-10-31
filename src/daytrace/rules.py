@@ -23,14 +23,15 @@ browser_profiles = []
 drop = ["(?i)private browsing", "(?i)incognito", "(?i)inprivate"]
 
 [paths]
-# The top-level folder under a project root names the project. The most specific root wins.
-projects = ["~/Documents/Projects", "~/Documents/Projects/personal"]
+# The top-level folder under a project root names the project. The most specific root wins, so with
+# ["~/Documents/Projects", "~/Documents/Projects/personal"] a folder under personal/ is its own project.
+projects = ["~/Documents/Projects"]
 
 [titles]
 # Web apps recognized from a browser tab title, checked in order: [pattern, category].
 categories = [
   ["(?i)- Google (Docs|Sheets|Slides|Drive|Forms)\\\\b", "docs"],
-  ["(?i)confluence|wiki\\\\.ncsa", "wiki"],
+  ["(?i)confluence", "wiki"],
   ["(?i)\\\\boutlook\\\\b", "email"],
   ["(?i)github", "review"],
 ]
@@ -64,12 +65,13 @@ categories = [
 
 [projects]
 # Top-level folder under a project root -> project key. Unlisted folders use their lowercased name.
-"INCORE-2.0" = "incore"
+# GitHub owners with no local clone map the same way.
+# "Website-2.0" = "website"
 
 [project_titles]
 # Project key -> patterns (case-insensitive) for titles that name it with no folder to go by: meetings,
 # chat channels, browser tabs, documents. Checked in order when nothing else names a project.
-# "incore" = ["in-?core"]
+# "website" = ["web-?site"]
 
 [git]
 roots = ["~/Documents/Projects"]

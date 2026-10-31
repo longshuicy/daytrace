@@ -10,7 +10,6 @@ from typing import Iterable
 from ..models import RawEvent, parse_iso
 from . import NotConfigured
 
-DEFAULT_URL = "https://wiki.ncsa.illinois.edu"
 PAGE_SIZE = 50
 MAX_PAGES = 10
 
@@ -20,7 +19,7 @@ class Confluence:
     overlap = timedelta(hours=1)
 
     def __init__(self, base_url: str | None = None, token: str | None = None, timeout: float = 20.0):
-        self.base_url = (base_url or os.environ.get("CONFLUENCE_URL") or DEFAULT_URL).rstrip("/")
+        self.base_url = (base_url or os.environ.get("CONFLUENCE_URL") or "").rstrip("/")
         self.token = token or os.environ.get("CONFLUENCE_TOKEN")
         self.timeout = timeout
 
@@ -33,8 +32,8 @@ class Confluence:
             return json.loads(resp.read())
 
     def fetch(self, since: datetime, until: datetime) -> Iterable[RawEvent]:
-        if not self.token:
-            raise NotConfigured("set CONFLUENCE_TOKEN in ~/.daytrace/.env")
+        if not (self.base_url and self.token):
+            raise NotConfigured("set CONFLUENCE_URL and CONFLUENCE_TOKEN in ~/.daytrace/.env")
         me = self._get("/rest/api/user/current")
         # CQL compares dates in the server's timezone, so ask a day wide and filter exactly below.
         day = (since - timedelta(days=1)).strftime("%Y-%m-%d")

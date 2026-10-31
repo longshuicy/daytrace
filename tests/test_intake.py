@@ -35,21 +35,21 @@ def test_project_titles_name_a_project_when_nothing_else_does(rules, projects, t
     from daytrace.rules import Rules
     from daytrace.store import Store
 
-    rules.project_titles = Rules.from_text('[project_titles]\n"illinois chat" = ["illinois.?chat"]\n').project_titles
-    meeting = RawEvent("outlook_calendar", "m", "plan", "observed", T0, title="Illinois Chat Design")
-    assert classify(meeting, rules) == ("normal", "illinois chat")
-    assert classify(window("Slack", "illinois-chat-dev (Channel) - Slack"), rules) == ("normal", "illinois chat")
-    assert classify(window("iTerm2", f"illinois-chat {projects}/PDG"), rules) == ("normal", "pdg")  # a path wins
+    rules.project_titles = Rules.from_text('[project_titles]\n"team chat" = ["team.?chat"]\n').project_titles
+    meeting = RawEvent("outlook_calendar", "m", "plan", "observed", T0, title="Team Chat Design")
+    assert classify(meeting, rules) == ("normal", "team chat")
+    assert classify(window("Slack", "team-chat-dev (Channel) - Slack"), rules) == ("normal", "team chat")
+    assert classify(window("iTerm2", f"team-chat {projects}/PDG"), rules) == ("normal", "pdg")  # a path wins
 
     s = Store(tmp_path / "t.db")
     named = rules.project_titles
     rules.project_titles = []
-    s.upsert([transform(window("Slack", "illinois-chat-dev"), rules),
+    s.upsert([transform(window("Slack", "team-chat-dev"), rules),
               transform(RawEvent("outlook_calendar", "c", "plan", "observed", T0, title="Counselling"), rules)], T0)
     rules.project_titles = named
     assert s.retag(rules.project_for_title, lambda t: t == "Counselling") == (1, 1)
     rows = s.conn.execute("SELECT project, sensitivity, title FROM events ORDER BY source").fetchall()
-    assert [tuple(r) for r in rows] == [("illinois chat", "normal", "illinois-chat-dev"), (None, "private", None)]
+    assert [tuple(r) for r in rows] == [("team chat", "normal", "team-chat-dev"), (None, "private", None)]
 
 
 def test_anything_not_private_is_normal(rules):
@@ -87,7 +87,7 @@ def test_title_is_scrubbed(rules):
 
 
 def test_scrub_and_strip_url():
-    assert strip_url("https://a.illinois.edu/p?session=secret#x") == "https://a.illinois.edu/p"
+    assert strip_url("https://a.example.edu/p?session=secret#x") == "https://a.example.edu/p"
     assert scrub("see https://h/p?token=zzz now") == "see https://h/p now"
     assert scrub("key sk-" + "A" * 30) == "key [redacted]"
     assert scrub("Fix helm values") == "Fix helm values"
@@ -95,8 +95,8 @@ def test_scrub_and_strip_url():
 
 def test_web_apps_recognized_from_browser_titles(rules):
     assert rules.category_for("Google Chrome", "INCORE plan - Google Docs") == "docs"
-    assert rules.category_for("Google Chrome", "Budget - Google Sheets - Google Chrome - Chen") == "docs"
-    assert rules.category_for("Google Chrome", "Release notes - NCSA Wiki - Confluence") == "wiki"
+    assert rules.category_for("Google Chrome", "Budget - Google Sheets - Google Chrome - Sam") == "docs"
+    assert rules.category_for("Google Chrome", "Release notes - Team Wiki - Confluence") == "wiki"
     assert rules.category_for("Google Chrome", "Mail - Outlook") == "email"
     assert rules.category_for("Google Chrome", "Pull requests · IN-CORE/incore-helm · GitHub") == "review"
     assert rules.category_for("Google Chrome", "Some recipe blog") == "browse"
@@ -107,7 +107,7 @@ def test_private_browser_profile(rules):
     rules.private_profiles = {"Home"}
     doc = lambda title: window("Google Chrome", title)
     assert transform(doc("Inbox - Google Chrome - Home"), rules).sensitivity == "private"
-    e = transform(doc("Trip plan - Google Docs - Google Chrome - Chen (illinois.edu)"), rules)
+    e = transform(doc("Trip plan - Google Docs - Google Chrome - Sam (example.edu)"), rules)
     assert e.sensitivity == "normal" and e.category == "docs" and e.title == "Trip plan - Google Docs"
 
 

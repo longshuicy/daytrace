@@ -24,14 +24,16 @@ apps/folders map to categories and projects goes in `~/.daytrace/rules.toml` (co
 | Apps & windows | `brew install --cask activitywatch` and keep [ActivityWatch](https://activitywatch.net/) running |
 | Local git | none; scans `[git] roots` in `rules.toml` for your commits (`git config --global user.email`) |
 | Claude Code | none; reads session timing from `~/.claude/projects` |
+| Cursor | none; reads agent chat timing from Cursor's local state database (message times only, never text) |
 | GitHub | `gh auth login` ([GitHub CLI](https://cli.github.com/)), or `GITHUB_TOKEN` in `.env` |
-| Confluence | wiki → profile → **Personal Access Tokens** → `CONFLUENCE_TOKEN` (and `CONFLUENCE_URL` if not the NCSA wiki) |
+| Confluence (Data Center) | `CONFLUENCE_URL` (your wiki's address) and `CONFLUENCE_TOKEN` (wiki → profile → **Personal Access Tokens**) in `.env` |
 | Outlook | see below |
 | Granola notes | `daytrace connect granola` (below) |
 
 ### Outlook calendar and mail
 
-daytrace signs in to Microsoft Graph with its own read-only app registration (no secret).
+daytrace signs in to Microsoft Graph with an app registration you create once (read-only, public client, no
+secret).
 
 1. In the [Azure portal](https://portal.azure.com) → **App registrations** → **New registration**: single tenant,
    no redirect URI.
@@ -49,6 +51,7 @@ daytrace signs in to Microsoft Graph with its own read-only app registration (no
    `~/.daytrace/msgraph-token.json` (chmod 600); `daytrace disconnect outlook` removes it.
 
 Only subjects, times, attendee counts and the other side's email *domains* are kept, never bodies or addresses.
+A meeting marked private or confidential in Outlook is stored as bare time.
 
 ### Granola meeting notes
 
@@ -69,11 +72,13 @@ them in the review and can click any out. The sign-in is in
 
 Any OpenAI-compatible chat endpoint works. Set three values in `.env`:
 
-| | Lumen | [OpenRouter](https://openrouter.ai/docs/quickstart) |
+| | [OpenRouter](https://openrouter.ai/docs/quickstart) | Your own gateway |
 |---|---|---|
-| `LUMEN_BASE_URL` | your Lumen URL ending in `/v1` | `https://openrouter.ai/api/v1` |
-| `LUMEN_MODEL` | a model Lumen serves | any id from [openrouter.ai/models](https://openrouter.ai/models) |
-| `LUMEN_API_KEY` | your Lumen key | an [OpenRouter key](https://openrouter.ai/settings/keys) |
+| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | its URL, ending in `/v1` |
+| `LLM_MODEL` | any id from [openrouter.ai/models](https://openrouter.ai/models) | a model it serves |
+| `LLM_API_KEY` | an [OpenRouter key](https://openrouter.ai/settings/keys) | your key |
+
+The older names `LUMEN_BASE_URL`, `LUMEN_MODEL` and `LUMEN_API_KEY` still work.
 
 A summary is meant for looking back: a short narrative, 3 to 6 observations with the evidence behind them
 (open loops from meeting notes, recurring topics, time vs. weight, and patterns like project switching, meeting

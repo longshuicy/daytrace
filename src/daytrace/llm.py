@@ -1,4 +1,4 @@
-"""Lumen (OpenAI-compatible chat completions) and the week and month summary prompts."""
+"""Any OpenAI-compatible chat completions endpoint, and the week and month summary prompts."""
 
 import json
 import os
@@ -70,10 +70,19 @@ def prompt(kind: str) -> str:
 OBSERVATION_KINDS = ("open_loop", "recurring", "time_vs_weight", "pattern")
 
 
+def _env(name: str) -> str | None:
+    # LUMEN_* is the older name of the same settings.
+    return os.environ.get(f"LLM_{name}") or os.environ.get(f"LUMEN_{name}")
+
+
+def model_name() -> str:
+    return _env("MODEL") or "(unset)"
+
+
 def settings() -> tuple[str, str, str]:
-    base, model, key = (os.environ.get(k) for k in ("LUMEN_BASE_URL", "LUMEN_MODEL", "LUMEN_API_KEY"))
+    base, model, key = _env("BASE_URL"), _env("MODEL"), _env("API_KEY")
     if not (base and model and key):
-        raise NotConfigured("set LUMEN_BASE_URL, LUMEN_MODEL and LUMEN_API_KEY in ~/.daytrace/.env")
+        raise NotConfigured("set LLM_BASE_URL, LLM_MODEL and LLM_API_KEY in ~/.daytrace/.env")
     return base.rstrip("/"), model, key
 
 
@@ -105,7 +114,7 @@ def parse(text: str) -> dict:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
-        raise ValueError("Lumen reply had no JSON object")
+        raise ValueError("LLM reply had no JSON object")
     data = json.loads(text[start:end + 1])
     observations = [
         {"kind": o.get("kind") if o.get("kind") in OBSERVATION_KINDS else "pattern",

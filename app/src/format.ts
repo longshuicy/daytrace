@@ -72,16 +72,3 @@ export const CATEGORY_LABEL: Record<string, string> = {
   wiki: "Wiki",
   notes: "Meeting notes",
 };
-
-const COUNT_WORD: Record<string, [string, string]> = {
-  commit: ["commit", "commits"], pr: ["PR", "PRs"], push: ["push", "pushes"], review: ["review", "reviews"],
-  issue: ["issue", "issues"], release: ["release", "releases"], wiki: ["wiki edit", "wiki edits"],
-  email: ["email sent", "emails sent"],
-};
-
-/** "3 commits · 1 PR · 1 push" */
-export function countText(counts: Record<string, number>): string {
-  return Object.entries(counts)
-    .map(([k, n]) => `${n} ${(COUNT_WORD[k] ?? [k, k])[n === 1 ? 0 : 1]}`)
-    .join(" · ");
-}

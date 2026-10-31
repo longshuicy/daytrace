@@ -181,7 +181,7 @@ def cmd_connect(args) -> None:
         granola.connect()
         print("\nConnected. Run `daytrace sync --source granola` to copy your notes.")
         return
-    print("Sign in with your Illinois Microsoft account. daytrace asks only for read-only access to your")
+    print("Sign in with your Microsoft work or school account. daytrace asks only for read-only access to your")
     print("calendar and email metadata (subjects, times, sender domains), never message bodies.\n")
     msgraph.connect()
     print("\nConnected. Run `daytrace sync` to collect your calendar and email.")
@@ -232,7 +232,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--date", help="any day in it, YYYY-MM-DD, default today")
     p.set_defaults(func=cmd_period)
 
-    p = sub.add_parser("summarize", help="describe a week or month with Lumen: build, review, then --send")
+    p = sub.add_parser("summarize", help="describe a week or month with an LLM: build, review, then --send")
     p.add_argument("kind", choices=["week", "month"])
     p.add_argument("--date", help="any day in it, YYYY-MM-DD, default today")
     p.add_argument("--send", action="store_true", help="send the request built earlier, after you reviewed it")

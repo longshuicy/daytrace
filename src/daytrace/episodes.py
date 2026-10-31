@@ -91,7 +91,7 @@ def _episode(kind: str, name: str | None, items: list) -> dict:
         if r["title"] and r["category"] in SUBJECTS and r["title"] not in subjects:
             subjects.append(r["title"])
         elif r["title"] and not site and r["category"] != "browse":
-            title = lumen_title(r, attrs)
+            title = shared_title(r, attrs)
             if title:
                 titles[title] += max((e - s).total_seconds(), 60)  # points weigh like a minute
     project = name if kind == "project" else None
@@ -117,13 +117,15 @@ def _episode(kind: str, name: str | None, items: list) -> dict:
     }
 
 
-def lumen_title(r, attrs: dict) -> str | None:
-    """A window or trace title as Lumen may see it: no people's names. None leaves nothing."""
+def shared_title(r, attrs: dict) -> str | None:
+    """A window or trace title as the LLM may see it: no people's names. None leaves nothing."""
     title, app = r["title"], attrs.get("app")
     if r["source"] == "outlook_mail":
-        return None  # sent-mail subjects are free text; Lumen gets the count
-    if attrs.get("lumen_title"):
-        return attrs["lumen_title"]  # a calendar subject with attendee names taken out
+        return None  # sent-mail subjects are free text; the LLM gets the count
+    # A calendar subject with attendee names taken out; events stored before the rename have "lumen_title".
+    shared = attrs.get("shared_title") or attrs.get("lumen_title")
+    if shared:
+        return shared
     if app == "Slack":
         return slack_title(title)
     if app == "Microsoft Teams" or title.endswith("Microsoft Teams"):
@@ -140,7 +142,7 @@ def app_view(title: str, sep: str | None, views: set[str], name: str) -> str:
 
 
 def slack_title(title: str) -> str:
-    """A Slack window title without people's names: "Alex (DM) - NCSA - Slack" -> "Direct message - NCSA".
+    """A Slack window title without people's names: "Alex (DM) - Acme - Slack" -> "Direct message - Acme".
 
     Channels and Slack's own views keep their names; anything else keeps only the workspace.
     """

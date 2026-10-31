@@ -35,7 +35,7 @@ def test_github_project_from_clone_or_owner(rules):
     ev = lambda owner, repo: RawEvent("github", "1", "point", "recorded", T0, owner=owner, repo=repo)
     assert classify(ev("LongShuicy", "notes"), rules) == ("normal", "longshuicy")
     assert classify(ev("IN-CORE", "incore-helm"), rules) == ("normal", "incore")  # via local clone
-    assert classify(ev("ncsa", "unknown-repo"), rules) == ("normal", "ncsa")
+    assert classify(ev("acme", "unknown-repo"), rules) == ("normal", "acme")
 
 
 def test_github_repo_matched_to_clone_by_remote(rules, projects):
@@ -116,7 +116,7 @@ def test_github_event_in_private_clone_is_redacted(rules, projects):
     assert e.sensitivity == "private" and e.title is None and e.url is None and e.attrs == {}
 
 
-ME = {"userKey": "k1", "username": "cwang138"}
+ME = {"userKey": "k1", "username": "jdoe"}
 
 
 def _page(by, number=3, kind="page"):

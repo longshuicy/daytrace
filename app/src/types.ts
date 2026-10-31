@@ -128,7 +128,7 @@ export interface Story {
   request: ReviewRequest | null;  // the built request waiting for review; null once sent
 }
 
-/** A week's or month's request to Lumen exactly as it would be sent; the review can only take things out. */
+/** A week's or month's request to the LLM exactly as it would be sent; the review can only take things out. */
 export interface ReviewRequest {
   period: string;
   days: { date: string; active_min: number | null; meeting_min: number | null; first: string | null; last: string | null }[];

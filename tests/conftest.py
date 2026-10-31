@@ -16,6 +16,8 @@ def projects(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def rules(projects: Path) -> Rules:
-    text = DEFAULT_RULES.replace('"~/Documents/Projects/personal"', f'"{projects}/personal"')
-    text = text.replace('"~/Documents/Projects"', f'"{projects}"')
+    text = DEFAULT_RULES.replace('projects = ["~/Documents/Projects"]',
+                                 f'projects = ["{projects}", "{projects}/personal"]')
+    text = text.replace('roots = ["~/Documents/Projects"]', f'roots = ["{projects}"]')
+    text = text.replace('# "Website-2.0" = "website"', '"INCORE-2.0" = "incore"')
     return Rules.from_text(text)

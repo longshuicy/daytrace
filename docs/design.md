@@ -25,7 +25,8 @@ Each adapter (`src/daytrace/adapters/`) implements `fetch(since, until) -> RawEv
 **Intake** (`intake.py`), before anything is stored:
 
 1. Drop incognito/private-browsing windows entirely.
-2. Private check (`[private]` apps, titles, paths, browser profiles): a match keeps only start/end.
+2. Private check (`[private]` apps, titles, paths, browser profiles, and Outlook meetings marked private): a match
+   keeps only start/end.
 3. Categorize (app → category, browser title → web app) and map path → project (top folder under the most
    specific `[paths] projects` root; GitHub repos via their local clone). With no path or repo to go by, a
    `[project_titles]` pattern in the title names the project (meetings, Slack channels, tabs, documents);
@@ -63,7 +64,7 @@ between two stretches of the same project counts for it (never meetings, mail, c
 
 ## LLM egress
 
-`egress.py` is the only code path to the LLM (`lumen.py`, any OpenAI-compatible endpoint):
+`egress.py` is the only code path to the LLM (`llm.py`, any OpenAI-compatible endpoint):
 
 1. Episodes are built from non-private events and merged into one entry per project (or meetings, or activity
    kind): days, minutes per activity, counts, ≤3 titles, site names, branch names.
@@ -81,7 +82,7 @@ between two stretches of the same project counts for it (never meetings, mail, c
    titles, sites, branches; meetings, topics, action items). **Send** sends it once; the reply is saved alongside.
 7. A stored summary is hidden once any event it used becomes private.
 
-The prompt (`lumen.py`) asks for a short narrative, 3–6 observations each with its evidence (open loops,
+The prompt (`llm.py`) asks for a short narrative, 3–6 observations each with its evidence (open loops,
 recurring topics, time vs. weight, patterns) and themes; a week also asks for next week's todos grouped by
 project. Week and month share the prompt otherwise. Reply time is dominated by the reply's length, not the
 request's: a month-sized request (~13k tokens) took as long as a week's (~2.5k).
@@ -89,7 +90,7 @@ request's: a month-sized request (~13k tokens) took as long as a week's (~2.5k).
 ## Desktop app
 
 Tauri shell (`app/src-tauri`) + React/D3 UI (`app/src`). It shells out to the CLI (`daytrace day|period|
-note|summarize|sync`), so all logic stays in Python. Windows: menu-bar icon, floating day clock, Day/Week/Month view.
+note|summarize|sync|backup`), so all logic stays in Python. Windows: menu-bar icon, floating day clock, Day/Week/Month view.
 
 ## Not yet
 

@@ -29,7 +29,7 @@ NEXT_STEPS = re.compile(r"next steps|action items|follow[- ]?ups?|to-?dos?", re.
 BOILERPLATE = re.compile(r"\b(context|attendees|participants|agenda)\b", re.I)  # headings that aren't topics
 _OWNERS = re.compile(r"\s*\(([^()]*)\)\s*$")
 _WITH = re.compile(r"\bwith (.+)$", re.I)
-_NAME = re.compile(r"^[A-Z][a-z]+(?: [A-Z][a-z]+){0,2}$")  # "Pat", "Robin Sample"; not "NCSA" or "the team"
+_NAME = re.compile(r"^[A-Z][a-z]+(?: [A-Z][a-z]+){0,2}$")  # "Pat", "Robin Sample"; not "IBM" or "the team"
 
 
 def notes_dir() -> Path:
@@ -174,7 +174,7 @@ def _owners(item: str) -> tuple[str, list[str]]:
 
 def people(folder: Path) -> set[str]:
     """Everyone the notes name as an action item's owner or in a title ("... with Pat and Sam"), to take out of
-    what Lumen sees."""
+    what the LLM sees."""
     owners, titled, text = set(), set(), []
     for note_id, entry in load_index(folder).items():
         m = _WITH.search(entry.get("title") or "")

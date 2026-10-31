@@ -16,7 +16,7 @@ def _event(**kw):
          "start": {"dateTime": "2026-10-22T15:00:00.0000000", "timeZone": "UTC"},
          "end": {"dateTime": "2026-10-22T15:30:00.0000000", "timeZone": "UTC"},
          "responseStatus": {"response": "accepted"},
-         "organizer": {"emailAddress": {"name": "Someone", "address": "someone@illinois.edu"}},
+         "organizer": {"emailAddress": {"name": "Someone", "address": "someone@example.edu"}},
          "attendees": [{}, {}, {}], "isOnlineMeeting": True, "onlineMeetingProvider": "teamsForBusiness"}
     e.update(kw)
     return e
@@ -26,7 +26,7 @@ def test_calendar_event_mapping_and_filters(rules):
     raw = calendar_raw(_event())
     assert raw.kind == "plan" and raw.evidence == "scheduled" and raw.category == "meeting"
     assert iso(raw.start_at) == "2026-10-22T15:00:00Z" and iso(raw.end_at) == "2026-10-22T15:30:00Z"
-    assert raw.attrs == {"attendees": 3, "response": "accepted", "organizer_domain": "illinois.edu",
+    assert raw.attrs == {"attendees": 3, "response": "accepted", "organizer_domain": "example.edu",
                          "online": "teamsForBusiness"}
     assert "someone@" not in repr(raw)
     assert transform(raw, rules).sensitivity == "normal"
@@ -46,12 +46,12 @@ def test_private_meeting_keeps_only_its_time(rules):
 
 def test_mail_keeps_domains_not_addresses():
     sent = mail_raw({"id": "m1", "subject": "Re: budget", "sentDateTime": "2026-10-22T16:00:00Z",
-                     "toRecipients": [{"emailAddress": {"address": "Alice@Illinois.edu"}}],
+                     "toRecipients": [{"emailAddress": {"address": "Alice@Example.edu"}}],
                      "ccRecipients": [{"emailAddress": {"address": "bob@nsf.gov"}},
-                                      {"emailAddress": {"address": "carol@illinois.edu"}}],
+                                      {"emailAddress": {"address": "carol@example.edu"}}],
                      "conversationId": "AAQk" + "x" * 60}, sent=True)
     assert sent.category == "email" and sent.attrs["recipients"] == 3
-    assert sent.attrs["domains"] == ["illinois.edu", "nsf.gov"]
+    assert sent.attrs["domains"] == ["example.edu", "nsf.gov"]
     assert "alice" not in repr(sent).lower() and "bob" not in repr(sent)
     received = mail_raw({"id": "m2", "subject": "Hi", "receivedDateTime": "2026-10-22T16:05:00Z",
                          "from": {"emailAddress": {"address": "x@github.com"}}}, sent=False)

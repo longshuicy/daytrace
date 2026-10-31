@@ -143,9 +143,6 @@ class Session:
             raise RuntimeError(f"Granola {method}: {reply['error'].get('message')}")
         return reply["result"]
 
-    def tools(self) -> list[dict]:
-        return self._rpc("tools/list", {})["tools"]
-
     def call(self, name: str, arguments: dict) -> str:
         """A tool's text output."""
         result = self._rpc("tools/call", {"name": name, "arguments": arguments})

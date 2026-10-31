@@ -19,7 +19,7 @@ _NOT_A_SITE = {"new tab", "untitled", "login", "log in", "sign in"}
 
 def site_of(title: str | None) -> str | None:
     """The site a browser tab title names: its host when the title is an address, else its last part
-    ("Pull requests · IN-CORE/incore-helm · GitHub" -> "GitHub"), or the whole title when it is just a short
+    ("Pull requests · octocat/hello-world · GitHub" -> "GitHub"), or the whole title when it is just a short
     name ("Microsoft Azure"). None when the title doesn't say."""
     if not title:
         return None

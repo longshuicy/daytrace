@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from daytrace import egress, episodes, lumen, summarize
+from daytrace import egress, episodes, llm, summarize
 from daytrace.models import UTC, RawEvent, iso
 from daytrace.report import day_bounds
 from daytrace.store import Store
@@ -31,7 +31,7 @@ def at(h, m=0):
 @pytest.fixture
 def day_store(tmp_path, rules, projects, monkeypatch):
     monkeypatch.setenv("DAYTRACE_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("LUMEN_MODEL", "test-model")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
     s = Store(tmp_path / "t.db")
     s.set_meta("day_zero", iso(ZERO))
     pdg = str(projects / "PDG")
@@ -64,16 +64,24 @@ def test_episodes_split_on_gaps_and_skip_mail_and_future(day_store):
 
 def test_final_check_refuses_leaks():
     with pytest.raises(ValueError):
-        egress.check({"episodes": [{"titles": ["mail carol@illinois.edu"]}]})
+        egress.check({"episodes": [{"titles": ["mail carol@example.edu"]}]})
     with pytest.raises(ValueError):
         egress.check({"episodes": [{"titles": ["key sk-" + "A" * 30]}]})
     egress.check({"episodes": [{"titles": ["Opened PR #2"]}]})
 
 
 def test_parse_reply_variants():
-    assert lumen.parse('{"narrative": "x", "themes": ["a"], "episodes": []}')["narrative"] == "x"
+    assert llm.parse('{"narrative": "x", "themes": ["a"], "episodes": []}')["narrative"] == "x"
     with pytest.raises(ValueError):
-        lumen.parse("Sorry, I can't help with that.")
+        llm.parse("Sorry, I can't help with that.")
+
+
+def test_llm_settings_accept_the_older_lumen_names(monkeypatch):
+    for name in ("BASE_URL", "MODEL", "API_KEY"):
+        monkeypatch.delenv(f"LLM_{name}", raising=False)
+        monkeypatch.setenv(f"LUMEN_{name}", name.lower())
+    monkeypatch.setenv("LLM_MODEL", "new")
+    assert llm.settings() == ("base_url", "new", "api_key")
 
 
 def test_entries_group_by_project_and_keep_browsing_to_sites():
@@ -104,12 +112,12 @@ def request(store) -> str:
 
 
 def test_week_request_is_built_from_gated_days_and_kept_for_review(day_store, monkeypatch):
-    monkeypatch.setattr(lumen, "complete", lambda body: pytest.fail("building a request must not call Lumen"))
+    monkeypatch.setattr(llm, "complete", lambda body: pytest.fail("building a request must not call the LLM"))
     r = summarize.prepare_period(day_store, "week", *WEEK, at(13))
     assert r.mode == "dry-run" and r.audit.parent.name == "week-2026-10-18"
     assert stat.S_IMODE(r.audit.stat().st_mode) == 0o600
     body = json.loads(r.audit.read_text())
-    assert body["messages"][0]["content"] == lumen.WEEK_PROMPT
+    assert body["messages"][0]["content"] == llm.WEEK_PROMPT
     payload = json.loads(body["messages"][1]["content"])
     text = json.dumps(payload)
     assert "Very private song" not in text and "Spotify" not in text and "Newsletter" not in text
@@ -129,14 +137,14 @@ def test_week_request_is_built_from_gated_days_and_kept_for_review(day_store, mo
 
 
 def test_nothing_is_sent_without_a_prepared_request(day_store, monkeypatch):
-    monkeypatch.setattr(lumen, "complete", lambda body: pytest.fail("must not call Lumen"))
+    monkeypatch.setattr(llm, "complete", lambda body: pytest.fail("must not call the LLM"))
     with pytest.raises(ValueError, match="review it first"):
         summarize.send_period(day_store, "week", WEEK[0], at(13))
 
 
 def test_send_sends_the_reviewed_request_minus_exclusions(day_store, monkeypatch):
     sent = []
-    monkeypatch.setattr(lumen, "complete", lambda body: sent.append(body) or json.dumps(
+    monkeypatch.setattr(llm, "complete", lambda body: sent.append(body) or json.dumps(
         {"narrative": "Your week was PDG.", "themes": ["PDG"]}))
     summarize.prepare_period(day_store, "week", *WEEK, at(13))
     r = summarize.send_period(day_store, "week", WEEK[0], at(13), [
@@ -153,7 +161,7 @@ def test_send_sends_the_reviewed_request_minus_exclusions(day_store, monkeypatch
 
 
 def test_week_story_is_withheld_once_its_events_turn_private(day_store, monkeypatch):
-    monkeypatch.setattr(lumen, "complete", lambda body: json.dumps({"narrative": "Your week was PDG.", "themes": []}))
+    monkeypatch.setattr(llm, "complete", lambda body: json.dumps({"narrative": "Your week was PDG.", "themes": []}))
     summarize.prepare_period(day_store, "week", *WEEK, at(13))
     summarize.send_period(day_store, "week", WEEK[0], at(13))
     with day_store.conn:  # as if the PDG folder were made private and re-synced
@@ -175,11 +183,11 @@ def test_a_page_that_names_no_site_goes_by_its_title(day_store, rules):
 
 
 @pytest.mark.parametrize("title, expected", [
-    ("Alex (DM) - NCSA @ Illinois - Slack", "Direct message - NCSA @ Illinois"),
-    ("Ann Lee, Bo Chen (DM) - NCSA @ Illinois - 2 new items - Slack", "Direct message - NCSA @ Illinois"),
-    ("* pdg-ncsa (Channel) - NCSA @ Illinois - 1 new item - Slack", "#pdg-ncsa - NCSA @ Illinois"),
-    ("Activity - NCSA @ Illinois - Slack", "Activity - NCSA @ Illinois"),
-    ("Huddle with Alex - NCSA @ Illinois - Slack", "Slack - NCSA @ Illinois"),  # unknown shape: no name kept
+    ("Alex (DM) - Acme Lab - Slack", "Direct message - Acme Lab"),
+    ("Ann Lee, Bo Park (DM) - Acme Lab - 2 new items - Slack", "Direct message - Acme Lab"),
+    ("* pdg-team (Channel) - Acme Lab - 1 new item - Slack", "#pdg-team - Acme Lab"),
+    ("Activity - Acme Lab - Slack", "Activity - Acme Lab"),
+    ("Huddle with Alex - Acme Lab - Slack", "Slack - Acme Lab"),  # unknown shape: no name kept
 ])
 def test_slack_titles_lose_names(title, expected):
     assert episodes.slack_title(title) == expected
@@ -187,22 +195,22 @@ def test_slack_titles_lose_names(title, expected):
 
 def test_slack_dm_names_stay_local(day_store, rules):
     dm = RawEvent("fake", "s1", "span", "observed", at(12, 45), at(12, 50), app="Slack",
-                  title="Alex (DM) - NCSA @ Illinois - Slack")
+                  title="Alex (DM) - Acme Lab - Slack")
     sync(day_store, rules, [Fake([dm])], at(13))
     text = request(day_store)
-    assert "Alex" not in text and "Direct message - NCSA @ Illinois" in text
+    assert "Alex" not in text and "Direct message - Acme Lab" in text
 
 
 @pytest.mark.parametrize("app, title, expected", [
     ("Microsoft Teams", "Chat | Alex Rivera | Microsoft Teams", "Microsoft Teams - Chat"),
     ("Microsoft Teams", "Alex Rivera | Microsoft Teams", "Microsoft Teams"),
-    ("Microsoft Outlook", "Inbox • cwang138@illinois.edu", "Outlook - Inbox"),
+    ("Microsoft Outlook", "Inbox • jdoe@example.edu", "Outlook - Inbox"),
     ("Microsoft Outlook", "Re: budget for Alex", "Outlook"),
     ("Google Chrome", "Mail - Pat Lee - Outlook", "Outlook - Mail"),  # Outlook on the web is category email
 ])
 def test_outlook_and_teams_windows_keep_only_the_view(app, title, expected):
     row = {"title": title, "source": "activitywatch", "category": "email" if "Outlook" in title else "chat"}
-    assert episodes.lumen_title(row, {"app": app}) == expected
+    assert episodes.shared_title(row, {"app": app}) == expected
 
 
 def test_sent_mail_subjects_and_meeting_names_stay_local(day_store, rules):
@@ -214,7 +222,7 @@ def test_sent_mail_subjects_and_meeting_names_stay_local(day_store, rules):
         "organizer": {"emailAddress": {"name": "Rivera, Alex", "address": "ar@example.edu"}}, "attendees": []})
     sent = mail_raw({"id": "m1", "subject": "Accepted: Colloquium - Sam Taylor",
                      "sentDateTime": "2026-10-22T17:20:00Z", "toRecipients": []}, sent=True)
-    assert meeting.title == "1:1 with Alex Rivera" and meeting.attrs["lumen_title"] == "1:1 with [person]"
+    assert meeting.title == "1:1 with Alex Rivera" and meeting.attrs["shared_title"] == "1:1 with [person]"
     assert "Alex" not in repr(meeting.attrs)
     sync(day_store, rules, [Fake([meeting, sent])], at(13))
     text = request(day_store)

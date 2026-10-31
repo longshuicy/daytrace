@@ -1,6 +1,6 @@
 [package]
 name = "daytrace-app"
-version = "0.1.0"
+version = "1.0.0"
 description = "daytrace desktop: menu-bar icon, floating pill, day view"
 edition = "2021"
 

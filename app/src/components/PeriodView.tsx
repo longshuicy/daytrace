@@ -282,7 +282,7 @@ function Cell({ d, today: now, openDay }: { d: PeriodDay | null; today: string; 
   );
 }
 
-/** Lumen's look back at the week or month. Nothing is sent until the exact request has been reviewed here. */
+/** The LLM's look back at the week or month. Nothing is sent until the exact request has been reviewed here. */
 function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
   const [busy, setBusy] = useState<"build" | "send" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -329,7 +329,7 @@ function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
           ) : (
             <p className="muted">
               {hasData
-                ? `No summary yet. You'll see exactly what would be sent to Lumen and can take anything out before it leaves.`
+                ? `No summary yet. You'll see exactly what would be sent to the model and can take anything out before it leaves.`
                 : `Nothing recorded this ${kind} yet.`}
             </p>
           )}
@@ -338,7 +338,7 @@ function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
           <div className="box-label">Themes</div>
           {story?.themes.length
             ? <div className="themes">{story.themes.map((t) => <span key={t} className="chip">{t}</span>)}</div>
-            : <p className="muted">Short labels Lumen picks from the {kind}.</p>}
+            : <p className="muted">Short labels the model picks from the {kind}.</p>}
         </div>
       </div>
       {story?.narrative && (story.observations?.length > 0 || story.next_week?.length > 0) && (
@@ -369,7 +369,7 @@ const OBSERVATION_LABEL: Record<string, string> = {
   open_loop: "Open loop", recurring: "Recurring", time_vs_weight: "Time vs. weight", pattern: "Pattern",
 };
 
-/** The week's draft todo list for the next one, to copy into the 1:1 doc. */
+/** The week's draft todo list for the next one, to copy into your own list. */
 function NextWeek({ groups }: { groups: TodoGroup[] }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -444,7 +444,7 @@ function Review({ kind, request, audit, busy, onSend, onRebuild }: {
         <div className="actions">
           <button className="quiet" disabled={!!busy} onClick={onRebuild}>{busy === "build" ? "Building…" : "Rebuild"}</button>
           <button className="primary" disabled={!!busy || kept === 0} onClick={() => onSend(exclusions)}>
-            {busy === "send" ? "Sending…" : `Send ${kept} of ${request.entries.length} to Lumen`}
+            {busy === "send" ? "Sending…" : `Send ${kept} of ${request.entries.length}`}
           </button>
         </div>
       </div>

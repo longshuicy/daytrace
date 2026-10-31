@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from daytrace import egress, lumen
+from daytrace import egress, llm
 from daytrace.patterns import day_patterns
 
 # A Thursday, in local time, so 9-to-5 boundaries mean what they say wherever the tests run.
@@ -58,7 +58,7 @@ def test_parse_keeps_observations_and_todos():
                        {"kind": "weird", "text": "Odd kind", "evidence": ""}, {"text": ""}],
       "next_week": [{"project": "alpha", "todos": [{"text": "Write it up", "why": "Fri sync"}, {"text": ""}]},
                     {"project": "beta", "todos": []}]}"""
-    parsed = lumen.parse(reply)
+    parsed = llm.parse(reply)
     assert [o["kind"] for o in parsed["observations"]] == ["open_loop", "pattern"]
     assert parsed["next_week"] == [{"project": "alpha", "todos": [{"text": "Write it up", "why": "Fri sync"}]}]
-    assert "next_week" in lumen.WEEK_PROMPT and "next_week" not in lumen.MONTH_PROMPT
+    assert "next_week" in llm.WEEK_PROMPT and "next_week" not in llm.MONTH_PROMPT

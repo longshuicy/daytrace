@@ -1,8 +1,9 @@
 [project]
 name = "daytrace"
-version = "0.1.0"
+version = "1.0.0"
 description = "A life, in little traces: a local-first reconstruction of your workday."
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = []
 

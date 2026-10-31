@@ -1,22 +1,18 @@
 """A day's work patterns for week and month requests: switching, meeting shape, focus and hours. Counted here, so
-Lumen only has to interpret them. Private time is never part of any of it beyond ending a focus stretch as a
+the LLM only has to interpret them. Private time is never part of any of it beyond ending a focus stretch as a
 "break"."""
 
 from datetime import datetime, time, timedelta
 
 from .dayjson import INTERRUPTS, focus_stretches, group_of
 from .models import parse_iso
-from .report import merge, total
+from .report import clock, merge, total
 
 WORK_START, WORK_END = time(9), time(17)  # the hours the summary treats as the working day
 MORNING_END = time(12)
 MEETING_RUN_GAP = timedelta(minutes=10)  # meetings closer than this are back to back
 MIN_STAY = timedelta(minutes=3)  # time on a project shorter than this isn't a switch to it
 MIN_FOCUS = 25  # minutes; shorter stretches aren't listed
-
-
-def _clock(dt: datetime) -> str:
-    return dt.astimezone().strftime("%H:%M")
 
 
 def _at(day: datetime, t: time) -> datetime:
@@ -76,7 +72,7 @@ def day_patterns(rows, start: datetime, end: datetime, now: datetime, label=lamb
         "projects": len({v[0] for v in stays}),
         "switches": max(len(order) - 1, 0),
         "meetings": len(meetings),
-        "meeting_runs": [f"{_clock(r[0][0])}–{_clock(r[-1][1])} ({len(r)} meetings)" for r in runs if len(r) > 1],
+        "meeting_runs": [f"{clock(r[0][0])}–{clock(r[-1][1])} ({len(r)} meetings)" for r in runs if len(r) > 1],
         "morning_meetings": len(in_morning),
         "morning_free_max_min": round(free.total_seconds() / 60),
         "focus": [{"time": f"{f['start'][11:16]}–{f['end'][11:16]}", "minutes": f["minutes"], "on": label(f["label"]),

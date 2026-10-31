@@ -1,17 +1,16 @@
-"""Write a week or month summary: day episodes -> egress gate -> request kept for review -> (after review) Lumen
+"""Write a week or month summary: day episodes -> egress gate -> request kept for review -> (after review) the LLM
 -> stored narrative. Nothing is sent without a review of the exact request.
 """
 
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import dayjson, egress, episodes, lumen, patterns
+from . import dayjson, egress, episodes, llm, patterns
 from .adapters import granola as notes
 from .models import iso, parse_iso
-from .report import day_bounds, merge
+from .report import clock, day_bounds, merge
 from .store import Store
 
 
@@ -54,7 +53,7 @@ def _private(rows, start: datetime, end: datetime, now: datetime) -> list[tuple[
 
 
 def _meeting_notes(rows, start: datetime, end: datetime, now: datetime, people: People) -> list[dict]:
-    """The day's meeting notes as digests, each with the calendar meeting it was taken in (its title as Lumen may
+    """The day's meeting notes as digests, each with the calendar meeting it was taken in (its title as the LLM may
     see it), or no title when it matched none."""
     folder = notes.notes_dir()
     found = notes.notes_between(folder, start, min(end, now))
@@ -68,16 +67,12 @@ def _meeting_notes(rows, start: datetime, end: datetime, now: datetime, people: 
         if not any(digest.values()):
             continue
         if i is None:
-            when, title = _local_clock(parse_iso(n["meeting_at"])), None
+            when, title = clock(parse_iso(n["meeting_at"])), None
         else:
             s, e, r = calendar[i]
-            when, title = f"{_local_clock(s)}–{_local_clock(e)}", episodes.lumen_title(r, json.loads(r["attrs"] or "{}"))
+            when, title = f"{clock(s)}–{clock(e)}", episodes.shared_title(r, json.loads(r["attrs"] or "{}"))
         out.append({"time": when, "title": title, **digest})
     return out
-
-
-def _local_clock(dt: datetime) -> str:
-    return dt.astimezone().strftime("%H:%M")
 
 
 def _day_payload(store: Store, day: date, now: datetime, people: People | None = None) -> tuple[dict, int, list[str]]:
@@ -131,7 +126,9 @@ def send_period(store: Store, kind: str, first: date, now: datetime,
     """Send the request prepare_period kept, minus what the review took out, and store the reply.
 
     Only a prepared request can be sent, and the review can only remove from it: exclude is a list of
-    {"entry": key} (the whole entry) or {"entry": key, "field": "titles" | "sites" | "branches", "value": ...}.
+    {"entry": key} (the whole entry), {"entry": key, "field": "titles" | "sites" | "branches", "value": ...},
+    {"meeting": key} (a meeting's whole notes) or {"meeting": key, "field": "topics" | "mine" | "waiting" |
+    "unassigned", "value": ...}. See egress.without.
     """
     key = period_key(kind, first)
     row = store.summary(key)
@@ -142,9 +139,9 @@ def send_period(store: Store, kind: str, first: date, now: datetime,
     body = _body(payload, kind)
     folder = key.replace(":", "-")
     audit = egress.write_audit(folder, "request", body, now)
-    reply = lumen.complete(body)
+    reply = llm.complete(body)
     egress.write_audit(folder, "response", {"reply": reply}, now)
-    parsed = lumen.parse(reply)
+    parsed = llm.parse(reply)
     if kind != "week":
         parsed["next_week"] = []  # only a week plans the next one
     store.save_summary(key, {"themes": parsed["themes"], "observations": parsed["observations"],
@@ -156,7 +153,7 @@ def send_period(store: Store, kind: str, first: date, now: datetime,
 
 
 def _body(payload: dict, kind: str) -> dict:
-    return lumen.request_body(payload, os.environ.get("LUMEN_MODEL") or "(unset)", system=lumen.prompt(kind))
+    return llm.request_body(payload, llm.model_name(), system=llm.prompt(kind))
 
 
 def current_period(store: Store, kind: str, first: date, last: date) -> dict | None:

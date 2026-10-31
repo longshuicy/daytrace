@@ -69,12 +69,12 @@ def _timeline(spans: list, points: list) -> list[tuple[datetime, datetime | None
             continue
         groups[(r["source"], _shown(r["category"]), r["project"], r["sensitivity"])].append((s, e))
     lines = []
-    for (source, category, project, sensitivity), intervals in groups.items():
+    for (source, category, project, _), intervals in groups.items():
         for s, e in merge(intervals, gap=timedelta(minutes=2)):
             if e - s >= timedelta(minutes=2):
-                lines.append((s, e, _label(source, category, project, sensitivity)))
+                lines.append((s, e, _label(source, category, project)))
     for p in points:
-        label = _label(p["source"], _shown(p["category"]), p["project"], p["sensitivity"])
+        label = _label(p["source"], _shown(p["category"]), p["project"])
         if p["title"]:
             label += f'  "{p["title"]}"'
         lines.append((parse_iso(p["start_at"]), None, label))
@@ -86,7 +86,7 @@ def _shown(category: str) -> str:
     return "other" if category == "private" else category
 
 
-def _label(source: str, category: str, project: str | None, sensitivity: str) -> str:
+def _label(source: str, category: str, project: str | None) -> str:
     where = project or "-"
     return f"{category:<9} {where:<14} {source}"
 

@@ -48,7 +48,7 @@ def calendar_raw(e: dict) -> RawEvent | None:
     }
     redacted = without_names(subject, people)
     if redacted != subject:
-        attrs["lumen_title"] = redacted  # what Lumen sees; the names themselves are never stored
+        attrs["shared_title"] = redacted  # what the LLM sees; the attendee list itself is never stored
     return RawEvent(
         "outlook_calendar", e["id"], "plan", "scheduled", start, end,
         category="meeting", title=subject, url=e.get("webLink"), attrs=attrs,
