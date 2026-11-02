@@ -81,6 +81,18 @@ def test_moved_or_deleted_meetings_disappear(tmp_path, rules):
     assert result.removed == 1 and s.counts_by_source()["outlook_calendar"] == 1
 
 
+def test_rescheduled_meeting_keeps_its_new_start(tmp_path, rules):
+    """Same Graph id with a new start (a dragged occurrence) must move, not stretch from the old start."""
+    s = _store(tmp_path)
+    now = datetime(2026, 10, 22, 14, 0, tzinfo=UTC)
+    sync(s, rules, [FakeCalendar([_event()])], now)  # 15:00–15:30
+    moved = _event(start={"dateTime": "2026-10-23T16:30:00.0000000", "timeZone": "UTC"},
+                   end={"dateTime": "2026-10-23T17:00:00.0000000", "timeZone": "UTC"})
+    sync(s, rules, [FakeCalendar([moved])], now + timedelta(minutes=10))
+    [row] = s.conn.execute("SELECT start_at, end_at FROM events WHERE source = 'outlook_calendar'").fetchall()
+    assert row["start_at"] == "2026-10-23T16:30:00Z" and row["end_at"] == "2026-10-23T17:00:00Z"
+
+
 def test_day_counts_only_the_past_and_calendar_meetings(tmp_path, rules):
     s = _store(tmp_path)
     local = datetime(2026, 10, 22, 0, 0).astimezone()

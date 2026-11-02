@@ -40,9 +40,9 @@ INSERT INTO events (id, source, source_id, kind, evidence, start_at, end_at, cat
                     project, title, url, sensitivity, attrs, ingested_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
-  end_at = excluded.end_at, category = excluded.category, project = excluded.project,
-  title = excluded.title, url = excluded.url, sensitivity = excluded.sensitivity,
-  attrs = excluded.attrs, ingested_at = excluded.ingested_at
+  start_at = excluded.start_at, end_at = excluded.end_at, category = excluded.category,
+  project = excluded.project, title = excluded.title, url = excluded.url,
+  sensitivity = excluded.sensitivity, attrs = excluded.attrs, ingested_at = excluded.ingested_at
 """
 
 
