@@ -72,25 +72,28 @@ between two stretches of the same project counts for it (never meetings, mail, c
 `egress.py` is the only code path to the LLM (`llm.py`, any OpenAI-compatible endpoint):
 
 1. Episodes are built from non-private events and merged into one entry per project (or meetings, or activity
-   kind): days, minutes per activity, counts, ≤3 titles, site names, branch names.
+   kind): days, minutes per activity, counts, ≤3 titles, Slack channel names, site names, branch names.
 2. Per-day patterns, counted locally so the LLM only interprets them (`patterns.py`): project switches,
    back-to-back meetings, the longest meeting-free stretch of the morning, focus stretches of 25+ minutes and what
    ended them, and active time outside 9–5.
-3. Each meeting's notes as a digest: its topics and its action items, split into mine, waiting on someone else,
-   and unassigned (`adapters/granola.py: digest`). Never the note text itself.
+3. Each meeting's notes as a digest: its project (when the meeting mapped to one), its topics and its action
+   items, split into mine, waiting on someone else, and unassigned (`adapters/granola.py: digest`). A "mine" item
+   is left out when a later commit, pull request, wiki edit or document on that project shares a distinctive word
+   with it. Never the note text itself.
 4. Titles lose people's names (Slack DMs, Teams/Outlook windows, meeting attendees); sent-mail subjects are
    dropped. In note digests, names that appear as action-item owners or in note titles become `[person]` and
    yours becomes "me"; a name that appears only in running text can slip through, which the review is for.
    Private time is a single total, and only a "break" when it ends a focus stretch.
 5. The payload is scrubbed again and refused if anything still looks like a secret or address.
 6. The exact request is written to `~/.daytrace/audit/` and shown in the app. Review can only remove (entries,
-   titles, sites, branches; meetings, topics, action items). **Send** sends it once; the reply is saved alongside.
+   titles, channels, sites, branches; meetings, topics, action items). **Send** sends it once; the reply is saved alongside.
 7. A stored summary is hidden once any event it used becomes private.
 
-The prompt (`llm.py`) asks for a short narrative, 3–6 observations each with its evidence (open loops,
-recurring topics, time vs. weight, patterns) and themes; a week also asks for next week's todos grouped by
-project. Week and month share the prompt otherwise. Reply time is dominated by the reply's length, not the
-request's: a month-sized request (~13k tokens) took as long as a week's (~2.5k).
+The prompt (`llm.py`) asks for a short narrative and one observation per project that took time or had notes:
+what that thread was across titles, branches, channels and meetings, and whether the period moved it. A pattern
+is mentioned only when it changes the thread. A week also asks for next week's todos, taken only from the "mine"
+items still in the request. Week and month share the prompt otherwise. Reply time is dominated by the reply's
+length, not the request's: a month-sized request (~13k tokens) took as long as a week's (~2.5k).
 
 ## Desktop app
 

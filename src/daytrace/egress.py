@@ -17,11 +17,11 @@ from .scrub import scrub
 MAX_TITLE = 140
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 
-ENTRY_FIELDS = ("key", "kind", "project", "group", "times", "minutes", "activities", "counts", "titles", "sites",
-                "branches")
+ENTRY_FIELDS = ("key", "kind", "project", "group", "times", "minutes", "activities", "counts", "titles",
+                "channels", "sites", "branches")
 PERIOD_ENTRY_FIELDS = ("key", "kind", "project", "group", "days", "minutes", "activities", "counts", "titles",
-                       "sites", "branches")
-PERIOD_TITLES, PERIOD_MEETING_TITLES, PERIOD_SITES = 3, 8, 5
+                       "channels", "sites", "branches")
+PERIOD_TITLES, PERIOD_MEETING_TITLES, PERIOD_SITES, PERIOD_CHANNELS = 3, 8, 5, 5
 STAT_FIELDS = ("active_min", "meetings", "meeting_min", "emails_sent", "emails_received", "commits", "prs",
                "reviews", "pushes", "wiki", "issues", "first", "last", "longest")
 
@@ -49,6 +49,7 @@ def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
             **{k: en.get(k) for k in ("key", "kind", "project", "group", "minutes", "activities", "counts")},
             "times": [f"{_clock(s)}–{_clock(e)}" for s, e in en["times"]],
             "titles": [clean(t) for t in en.get("titles", [])],
+            "channels": [clean(c) for c in en.get("channels", [])],
             "sites": {clean(s): m for s, m in en.get("sites", {}).items()},
             "branches": [clean(b) for b in en.get("branches", [])],
         }
@@ -71,6 +72,8 @@ def build_payload(day: str, entries: list[dict], also: dict, summary: dict,
         "private": [{"start": _clock(s), "end": _clock(e), "minutes": m} for s, e, m in private],
         "patterns": patterns or {},
         "meetings": [{"time": m["time"], "title": clean(m["title"]) if m.get("title") else None,
+                      "project": m.get("project") or None,
+                      **({"at": m["at"]} if m.get("at") else {}),
                       **{k: [clean(v) for v in m.get(k, [])] for k in MEETING_LISTS}} for m in meetings],
     }
     check(payload)
@@ -86,7 +89,8 @@ def build_period_payload(label: str, days: list[dict]) -> dict:
         st = d["stats"]
         per_day.append({"date": when, "active_min": st.get("active_min"), "meeting_min": st.get("meeting_min"),
                         "first": st.get("first"), "last": st.get("last"), **d.get("patterns", {})})
-        meetings += [{"key": f"{when} {m['time']}", "day": when, **m} for m in d.get("meetings", [])]
+        meetings += [{"key": f"{when} {m['time']}", "day": when,
+                      **{k: v for k, v in m.items() if k != "at"}} for m in d.get("meetings", [])]
         stats.update({k: v for k, v in st.items() if isinstance(v, int) and k != "active_min"})
         stats["active_min"] += st.get("active_min") or 0
         if st.get("longest") and (longest is None or st["longest"]["minutes"] > longest["minutes"]):
@@ -97,19 +101,21 @@ def build_period_payload(label: str, days: list[dict]) -> dict:
             en = entries.setdefault(item["key"], {
                 "key": item["key"], "kind": item["kind"], "project": item["project"], "group": item["group"],
                 "days": [], "minutes": 0, "activities": Counter(), "counts": Counter(), "titles": [],
-                "sites": Counter(), "branches": [],
+                "channels": [], "sites": Counter(), "branches": [],
             })
             en["days"].append(when)
             en["minutes"] += item["minutes"]
             en["activities"].update(item["activities"])
             en["counts"].update(item["counts"])
             en["titles"] += [t for t in item["titles"] if t not in en["titles"]]
+            en["channels"] += [c for c in item.get("channels") or [] if c not in en["channels"]]
             en["sites"].update(item["sites"])
             en["branches"] += [b for b in item["branches"] if b not in en["branches"]]
     items = []
     for en in sorted(entries.values(), key=lambda en: -en["minutes"]):
         limit = PERIOD_MEETING_TITLES if en["kind"] == "meeting" else PERIOD_TITLES
         en.update(activities=dict(en["activities"]), counts=dict(en["counts"]), titles=en["titles"][:limit],
+                  channels=en["channels"][:PERIOD_CHANNELS],
                   sites=dict(en["sites"].most_common(PERIOD_SITES)), branches=en["branches"][:3])
         items.append({k: en[k] for k in PERIOD_ENTRY_FIELDS})
     payload = {
@@ -125,7 +131,7 @@ def build_period_payload(label: str, days: list[dict]) -> dict:
     return payload
 
 
-REVIEWABLE = ("titles", "sites", "branches")
+REVIEWABLE = ("titles", "channels", "sites", "branches")
 
 
 def without(payload: dict, exclude: list[dict]) -> dict:

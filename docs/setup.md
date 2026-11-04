@@ -94,10 +94,11 @@ Any OpenAI-compatible chat endpoint works. Set three values in `.env`:
 
 The older names `LUMEN_BASE_URL`, `LUMEN_MODEL` and `LUMEN_API_KEY` still work.
 
-A summary is meant for looking back: a short narrative, 3 to 6 observations with the evidence behind them
-(open loops from meeting notes, recurring topics, time vs. weight, and patterns like project switching, meeting
-runs, focus stretches and time outside 9–5), and for a week, a draft todo list for the next one, grouped by
-project, to copy into your own list. daytrace counts the patterns itself; the model only interprets them.
+A summary names what each project was: a short narrative and one observation per project, drawn from its
+titles, branches, Slack channels and meeting notes, and whether the week moved it. Action items you own are
+left out of the request once a later commit, pull request, wiki edit or document on that project shares a word
+with them. For a week, the todos are those remaining items, grouped by project, to copy into your own list.
+daytrace counts the patterns itself; the model mentions one only when it changes what a project was.
 
 Then, in the app's Week or Month view (or the CLI):
 

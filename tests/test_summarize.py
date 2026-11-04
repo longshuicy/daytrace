@@ -182,6 +182,65 @@ def test_a_page_that_names_no_site_goes_by_its_title(day_store, rules):
     assert "Quarterly budget planning notes for the lab" in request(day_store)  # for review before anything is sent
 
 
+def test_a_channel_is_kept_when_subjects_fill_the_titles():
+    start, end = day_bounds(DAY)
+    t = iso(at(9))
+
+    def row(i, **kw):
+        base = {"id": str(i), "sensitivity": "normal", "project": "pdg", "attrs": "{}", "source": "git",
+                "evidence": "recorded", "kind": "point", "end_at": None, "start_at": t}
+        base.update(kw)
+        return base
+
+    rows = [
+        row(1, category="commit", title="Fix ingest"),
+        row(2, category="commit", title="Open the valve", start_at=iso(at(9, 1))),
+        row(3, category="commit", title="Rename the pump", start_at=iso(at(9, 2))),
+        row(4, category="chat", title="#pdg-ncsa · 2 messages", start_at=iso(at(9, 3)), source="slack"),
+    ]
+    [pdg] = episodes.entries(episodes.build(rows, start, end, at(13)))[0]
+    assert pdg["key"] == "pdg" and pdg["channels"] == ["#pdg-ncsa"]
+    assert pdg["titles"] == ["Fix ingest", "Open the valve", "Rename the pump"]
+    assert episodes.channels_in(episodes.slack_title("* pdg-ncsa (Channel) - Acme Lab - Slack")) == ["#pdg-ncsa"]
+
+
+def test_a_followed_action_item_leaves_the_request(day_store, rules, projects):
+    from daytrace.adapters.granola import save_index
+    from daytrace.config import home
+    folder = home() / "notes" / "granola"
+    folder.mkdir(parents=True)
+    (folder / "n.md").write_text(
+        "---\ntitle: \"PDG weekly\"\n---\n\n# PDG weekly\n\n# Release plan\n\n## Next steps\n\n"
+        "- Write up the release notes (Robin Sample)\n- Book the demo room (Robin Sample)\n")
+    save_index(folder, {"n1": {"title": "PDG weekly", "meeting_at": iso(at(10, 15)), "updated_at": "u",
+                               "url": None, "path": "n.md"}})
+    (folder / "account.json").write_text(json.dumps({"name": "Robin Sample"}))
+    with day_store.conn:
+        day_store.conn.execute("UPDATE events SET source = 'outlook_calendar', project = 'pdg' "
+                               "WHERE title = 'PDG weekly'")
+    pdg = str(projects / "PDG")
+    later = [
+        RawEvent("git", "c2", "point", "recorded", at(12), category="commit", title="Ship the release notes", path=pdg),
+        RawEvent("git", "c3", "point", "recorded", at(12, 5), category="commit", title="Open the valve", path=pdg),
+        RawEvent("slack", "s1", "point", "recorded", at(12, 10), category="chat", title="#pdg-ncsa · 2 messages",
+                 path=pdg),
+    ]
+    sync(day_store, rules, [Fake(later)], at(13))
+    payload = json.loads(json.loads(request(day_store))["messages"][1]["content"])
+    [meeting] = payload["meetings"]
+    assert meeting["project"] == "pdg" and "at" not in meeting
+    assert meeting["mine"] == ["Book the demo room"]
+    assert any(e["key"] == "pdg" and "#pdg-ncsa" in e["channels"] for e in payload["entries"])
+    before = {"meetings": [{"project": "pdg", "at": iso(at(10)), "mine": ["Write up the release notes"]}]}
+    summarize.drop_closed([before], [(at(9), "pdg", "Draft the release notes")])
+    assert before["meetings"][0]["mine"] == ["Write up the release notes"]  # a trace from before the meeting
+    summarize.drop_closed([before], [(at(12), "pdg", "Ship the release notes")])
+    assert before["meetings"][0]["mine"] == []
+    orphan = {"meetings": [{"project": None, "at": iso(at(10)), "mine": ["Book the demo room"]}]}
+    summarize.drop_closed([orphan], [(at(12), "pdg", "Book the demo room")])
+    assert orphan["meetings"][0]["mine"] == ["Book the demo room"]  # no project: nothing to match it to
+
+
 @pytest.mark.parametrize("title, expected", [
     ("Alex (DM) - Acme Lab - Slack", "Direct message - Acme Lab"),
     ("Ann Lee, Bo Park (DM) - Acme Lab - 2 new items - Slack", "Direct message - Acme Lab"),

@@ -8,35 +8,29 @@ import urllib.request
 from .adapters import NotConfigured
 
 _PROMPT = """\
-You help one person look back on their {period}: where their time went and what is pulling at their attention.
+You help one person look back on their {period} and name what each project actually was.
 {when}
 
 Input JSON:
 - "stats": totals for the {period}. "private" is a total of private time; never guess what it was.
-- "days": one per day with data: active and meeting minutes, first and last activity (local time), "weekend",
-  "projects" touched, project "switches", "meetings", "meeting_runs" (back-to-back meetings), "morning_meetings"
-  and "morning_free_max_min" (the longest meeting-free stretch between 9:00 and 12:00), "focus" (stretches of 25
-  minutes or more on one thing: when, how long, on what, and what ended it: a meeting, comms (mail or chat), a
-  break, a switch to something else, or stopped), and "outside_9_5_min" (active minutes before 9:00 or after 17:00).
+- "days": one per day with data. The counts are already done: project "switches", "meeting_runs", "focus"
+  stretches and what ended them, "outside_9_5_min", and the morning's longest meeting-free stretch. Mention a
+  pattern only when it changes what a project was. Don't restate the hours.
 - "entries": one per project (or for meetings, or a kind of activity without a project): the days it appeared,
-  minutes per activity, counts (commits, PRs, wiki edits...), a few titles, sites and git branches.
-- "meetings": meetings with notes: day, time, calendar title (null when it wasn't on the calendar), "topics", and
-  action items: "mine" (I own them), "waiting" (someone else owns them) and "unassigned". People are "[person]";
-  the reader is "me".
+  minutes per activity, counts, a few titles, sites, git branches, and "channels" (Slack channels whose names
+  mapped to that project).
+- "meetings": notes, each with "project" when the meeting mapped to one (null when it didn't), "topics", and
+  action items. "mine" is only what is still open: a later commit, pull request, wiki edit or document on that
+  project already shared a word with anything left out. "waiting" is someone else's; "unassigned" has no owner.
+  People are "[person]"; the reader is "me".
 
-Voice: second person ("You ..."), plain and specific. Make each observation sharp and back it with the numbers or
-the meeting it comes from. Don't judge: no "good", "productive", "too much" or "you should". Name the tension and
-let the reader decide.{advice}
+Voice: second person ("You ..."), plain and specific. Don't judge: no "good", "productive", "too much" or
+"you should". Name the thread and let the reader decide.{advice}
 
-Look for these, and include only what the data shows:
-1. Where time went: the projects that took the most time, and meetings vs hands-on work for each (match meeting
-   titles and topics to projects by name).
-2. Open loops: "mine" items with no later trace on that project (commit, PR, wiki edit, doc or window title), and
-   "waiting" items that don't come up again.
-3. Recurring topics: the same topic in two or more meetings without being settled.
-4. Time vs. weight: projects with lots of meeting time and little hands-on work, or the reverse.
-5. Patterns: scattered days (many switches), meeting shape (back-to-back runs, broken mornings), when focus
-   happened and what ended it, starts before 8:30, finishes after 18:00, weekend work.
+For each project that took real time or had notes, say what the thread was and whether the {period} moved it.
+Titles, branches, channels and the meetings with that project are one thread. A commit, pull request or wiki
+edit means it moved; otherwise it was only talked about. Mention an open item only when it is still listed
+under "mine". A meeting with no project stays with the meeting.
 
 Rules:
 - Use only what is in the data. Never invent tasks, people, decisions or outcomes.
@@ -44,21 +38,22 @@ Rules:
 - Minutes are spans of activity, not effort.
 
 Reply with only a JSON object, no prose around it:
-{{"narrative": "<3 to 5 sentences: the shape of the {period} and the one or two tensions most worth noticing>",
- "observations": [{{"kind": "open_loop" | "recurring" | "time_vs_weight" | "pattern",
-                   "text": "<one sentence>", "evidence": "<the numbers, days or meetings behind it>"}}],
+{{"narrative": "<2 to 4 sentences naming the one or two threads most worth noticing>",
+ "observations": [{{"kind": "thread",
+                    "text": "<one or two sentences: what this project was, and whether it moved>",
+                    "evidence": "<the titles, channel, meeting or open item this comes from>"}}],
 {next_week} "themes": ["<2 to 4 short noun phrases>"]}}
-Give 3 to 6 observations, the most notable first.{limit}
+One observation per such project, the ones that moved or are still open first, at most 8.{limit}
 """
 
 WEEK_PROMPT = _PROMPT.format(
     period="week", when="They read this on Monday morning, before planning the week ahead.",
     advice=' The one place you suggest anything is "next_week".',
-    next_week=' "next_week": [{"project": "<project, or a short name for the area>",\n'
-              '                "todos": [{"text": "<a todo to paste into a list>", "why": "<the open loop, meeting '
-              'or pattern it comes from>"}]}],\n',
-    limit=' "next_week" drafts next week\'s todo list from the open loops and "waiting" items worth chasing, grouped '
-          'by project, at most 8 todos in all.')
+    next_week=' "next_week": [{"project": "<the project>",\n'
+              '                "todos": [{"text": "<a todo to paste into a list>", "why": "<the open item it '
+              'comes from>"}]}],\n',
+    limit=' "next_week" is only those "mine" items still in the data, phrased so they can be pasted, grouped by '
+          'project, at most 8. Leave it empty when nothing is still open.')
 MONTH_PROMPT = _PROMPT.format(period="month", when="They read this at the end of the month.", advice="",
                               next_week="", limit="")
 
@@ -67,7 +62,8 @@ def prompt(kind: str) -> str:
     return WEEK_PROMPT if kind == "week" else MONTH_PROMPT
 
 
-OBSERVATION_KINDS = ("open_loop", "recurring", "time_vs_weight", "pattern")
+# "thread" is what a new reply uses. The others remain so a reply that still uses them is kept as sent.
+OBSERVATION_KINDS = ("thread", "open_loop", "recurring", "time_vs_weight", "pattern")
 
 
 def _env(name: str) -> str | None:
@@ -119,7 +115,7 @@ def parse(text: str) -> dict:
     observations = [
         {"kind": o.get("kind") if o.get("kind") in OBSERVATION_KINDS else "pattern",
          "text": str(o.get("text", "")).strip(), "evidence": str(o.get("evidence", "")).strip()}
-        for o in data.get("observations") or [] if isinstance(o, dict) and str(o.get("text", "")).strip()][:6]
+        for o in data.get("observations") or [] if isinstance(o, dict) and str(o.get("text", "")).strip()][:8]
     next_week = []
     for group in data.get("next_week") or []:
         if not isinstance(group, dict):

@@ -3,6 +3,7 @@
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,17 @@ from .adapters import granola as notes
 from .models import iso, parse_iso
 from .report import clock, day_bounds, merge
 from .store import Store
+
+# A later one of these on the same project can close an action item, when a distinctive word overlaps.
+TRACE = {"commit", "pr", "wiki", "docs"}
+_WORD = re.compile(r"[a-z0-9]{4,}")
+# Generic words that would close an item against almost any title.
+_STOP = frozenset("""
+about after also been before being from have into just more next note notes only over
+some that them then there these they this those were what when where which while will
+with would your meeting update please need send write follow check make look week
+today item items action sync call chat
+""".split())
 
 
 @dataclass
@@ -52,9 +64,50 @@ def _private(rows, start: datetime, end: datetime, now: datetime) -> list[tuple[
     return out
 
 
+def distinctive(text: str) -> set[str]:
+    """Words long enough, and uncommon enough, to say an action item and a title are the same work."""
+    return {w for w in _WORD.findall(text.lower()) if w not in _STOP}
+
+
+def echoed(item: str, titles: list[str]) -> bool:
+    """True when a later title shares a distinctive word with the item. An item with none is kept."""
+    words = distinctive(item)
+    return bool(words) and any(words & distinctive(title) for title in titles)
+
+
+def drop_closed(days: list[dict], traces: list[tuple[datetime, str, str]]) -> None:
+    """Drop "mine" items a later commit, pull request, wiki edit or doc on that project already echoes.
+
+    `at` stays on the day payload for this comparison; the period payload leaves it off. A meeting with no
+    project keeps its items: there is nothing to match them to."""
+    for day in days:
+        for m in day.get("meetings", []):
+            project, at = m.get("project"), m.get("at")
+            if not project or not at:
+                continue
+            start = parse_iso(at)
+            later = [title for when, proj, title in traces if proj == project and when >= start]
+            m["mine"] = [item for item in m["mine"] if not echoed(item, later)]
+
+
+def _traces(rows, start: datetime, end: datetime, now: datetime) -> list[tuple[datetime, str, str]]:
+    """(when, project, cleaned title) for the traces that can close an action item."""
+    out = []
+    for r in rows:
+        if (r["sensitivity"] == "private" or r["category"] not in TRACE or not r["title"] or not r["project"]):
+            continue
+        when = parse_iso(r["start_at"])
+        if when < start or when >= min(end, now):
+            continue
+        title = egress.clean(r["title"])
+        if title:
+            out.append((when, r["project"], title))
+    return out
+
+
 def _meeting_notes(rows, start: datetime, end: datetime, now: datetime, people: People) -> list[dict]:
-    """The day's meeting notes as digests, each with the calendar meeting it was taken in (its title as the LLM may
-    see it), or no title when it matched none."""
+    """The day's meeting notes as digests, each with the meeting's project and the calendar title as the LLM may
+    see it (no title when it matched none). `at` is the start, for telling which traces came after."""
     folder = notes.notes_dir()
     found = notes.notes_between(folder, start, min(end, now))
     if not found:
@@ -75,18 +128,21 @@ def _meeting_notes(rows, start: datetime, end: datetime, now: datetime, people: 
             if not any(digest.values()):
                 continue
             s, e, r = group[i]
-            out.append({"time": f"{clock(s)}–{clock(e)}",
+            out.append({"time": f"{clock(s)}–{clock(e)}", "at": iso(s), "project": r["project"],
                         "title": episodes.shared_title(r, json.loads(r["attrs"] or "{}")), **digest})
         leftover = still
     for n in leftover:
         digest = notes.digest(folder, n["id"], people.names, people.me)
         if any(digest.values()):
-            out.append({"time": clock(parse_iso(n["meeting_at"])), "title": None, **digest})
+            out.append({"time": clock(parse_iso(n["meeting_at"])), "at": n["meeting_at"], "project": None,
+                        "title": None, **digest})
     return out
 
 
-def _day_payload(store: Store, day: date, now: datetime, people: People | None = None) -> tuple[dict, int, list[str]]:
-    """A day's gated payload, its entry count, and the ids of the events that went into it."""
+def _day_payload(store: Store, day: date, now: datetime, people: People | None = None
+                 ) -> tuple[dict, int, list[str], list[tuple[datetime, str, str]]]:
+    """A day's gated payload, its entry count, the ids of the events that went into it, and the traces that can
+    close an action item."""
     start, end = day_bounds(day)
     rows = store.events_between(iso(start), iso(end))
     eps = episodes.build(rows, start, end, now)
@@ -97,7 +153,7 @@ def _day_payload(store: Store, day: date, now: datetime, people: People | None =
     meetings = _meeting_notes(rows, start, end, now, people) if people else []
     payload = egress.build_payload(day.isoformat(), items, also, summary, _private(rows, start, end, now),
                                    day_patterns, meetings)
-    return payload, len(items), [i for ep in eps for i in ep["event_ids"]]
+    return payload, len(items), [i for ep in eps for i in ep["event_ids"]], _traces(rows, start, end, now)
 
 
 def period_key(kind: str, first: date) -> str:
@@ -108,7 +164,7 @@ def period_key(kind: str, first: date) -> str:
 def prepare_period(store: Store, kind: str, first: date, last: date, now: datetime) -> SummaryResult:
     """Build a week's or month's request from the gated payloads of its days and keep it for review; nothing is
     sent. Days after today or with no entries are left out."""
-    days, ids = [], []
+    days, ids, traces = [], [], []
     zero = parse_iso(store.get_meta("day_zero") or iso(day_bounds(first)[0])).astimezone().date()
     today = now.astimezone().date()
     people = People.load()
@@ -116,13 +172,15 @@ def prepare_period(store: Store, kind: str, first: date, last: date, now: dateti
         day = first + timedelta(days=i)
         if day > today or day < zero:
             continue
-        payload, entries, used = _day_payload(store, day, now, people)
+        payload, entries, used, day_traces = _day_payload(store, day, now, people)
         if entries or payload["stats"].get("active_min"):
             days.append(payload)
             ids += used
+            traces += day_traces
     if not days:
         raise ValueError(f"nothing recorded this {kind} yet")
     label = (f"week of {first:%A %Y-%m-%d} to {last:%A %Y-%m-%d}" if kind == "week" else f"{first:%B %Y}")
+    drop_closed(days, traces)
     payload = egress.build_period_payload(label, days)
     key = period_key(kind, first)
     audit = egress.write_audit(key.replace(":", "-"), "dry-run", _body(payload, kind), now)

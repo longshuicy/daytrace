@@ -105,7 +105,7 @@ export interface Day {
 }
 
 export interface Observation {
-  kind: "open_loop" | "recurring" | "time_vs_weight" | "pattern";
+  kind: "thread" | "open_loop" | "recurring" | "time_vs_weight" | "pattern";
   text: string;
   evidence: string;
 }
@@ -149,6 +149,7 @@ export interface ReviewEntry {
   activities: Record<string, number>;
   counts: Record<string, number>;
   titles: string[];
+  channels?: string[];
   sites: Record<string, number>;
   branches: string[];
 }
@@ -159,6 +160,7 @@ export interface ReviewMeeting {
   day: string;
   time: string;
   title: string | null;
+  project?: string | null;
   topics: string[];
   mine: string[];
   waiting: string[];
@@ -169,7 +171,7 @@ export type MeetingField = "topics" | "mine" | "waiting" | "unassigned";
 
 /** What a review took out: a whole entry, or one title, site or branch of it; a whole meeting's notes, or one
  * topic or action item of them. */
-export type Exclusion = { entry: string } | { entry: string; field: "titles" | "sites" | "branches"; value: string }
+export type Exclusion = { entry: string } | { entry: string; field: "titles" | "channels" | "sites" | "branches"; value: string }
   | { meeting: string } | { meeting: string; field: MeetingField; value: string };
 
 export interface Site {

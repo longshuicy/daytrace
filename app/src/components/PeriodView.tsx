@@ -370,6 +370,7 @@ function PeriodStory({ kind, p }: { kind: PeriodKind; p: Period }) {
 }
 
 const OBSERVATION_LABEL: Record<string, string> = {
+  thread: "Thread",
   open_loop: "Open loop", recurring: "Recurring", time_vs_weight: "Time vs. weight", pattern: "Pattern",
 };
 
@@ -402,12 +403,12 @@ function NextWeek({ groups }: { groups: TodoGroup[] }) {
           </ul>
         </div>
       ))}
-      <p className="caption">A draft from this week's open loops. Edit it before it goes in your list.</p>
+      <p className="caption">A draft from the open items still in this week's notes. Edit it before it goes in your list.</p>
     </div>
   );
 }
 
-const FIELDS = [["titles", "Titles"], ["sites", "Sites and pages"], ["branches", "Branches"]] as const;
+const FIELDS = [["titles", "Titles"], ["channels", "Channels"], ["sites", "Sites and pages"], ["branches", "Branches"]] as const;
 const MEETING_FIELDS = [["topics", "Topics"], ["mine", "Mine"], ["waiting", "Waiting on"], ["unassigned", "Unassigned"]] as const;
 
 function entryName(e: ReviewEntry): string {
@@ -454,7 +455,7 @@ function Review({ kind, request, audit, busy, onSend, onRebuild }: {
       </div>
       <p className="review-note">
         This is everything the request for {request.period} holds. Nothing has left your Mac. Untick an entry to leave it
-        out, or click a title, site or branch to remove just that.
+        out, or click a title, channel, site or branch to remove just that.
       </p>
       <ul className="review-list">
         {request.entries.map((e) => {
@@ -468,7 +469,7 @@ function Review({ kind, request, audit, busy, onSend, onRebuild }: {
                 <span className="muted tabular">{minutes(e.minutes)} · {e.days.join(", ")}{counts && ` · ${counts}`}</span>
               </label>
               {!off && FIELDS.map(([field, label]) => {
-                const values = field === "sites" ? Object.keys(e.sites) : e[field];
+                const values = field === "sites" ? Object.keys(e.sites) : (e[field] ?? []);
                 if (!values.length) return null;
                 return (
                   <div key={field} className="review-field">
@@ -506,7 +507,7 @@ function Review({ kind, request, audit, busy, onSend, onRebuild }: {
                   <label className="review-entry">
                     <input type="checkbox" checked={!off} onChange={() => toggle(mid(m.key))} />
                     <span className="review-name">{m.title ?? "Not on the calendar"}</span>
-                    <span className="muted tabular">{m.day} · {m.time}</span>
+                    <span className="muted tabular">{[m.project, m.day, m.time].filter(Boolean).join(" · ")}</span>
                   </label>
                   {!off && MEETING_FIELDS.map(([field, label]) => m[field].length > 0 && (
                     <div key={field} className="review-field">
