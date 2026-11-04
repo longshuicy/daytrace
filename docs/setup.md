@@ -28,7 +28,21 @@ apps/folders map to categories and projects goes in `~/.daytrace/rules.toml` (co
 | GitHub | `gh auth login` ([GitHub CLI](https://cli.github.com/)), or `GITHUB_TOKEN` in `.env` |
 | Confluence (Data Center) | `CONFLUENCE_URL` (your wiki's address) and `CONFLUENCE_TOKEN` (wiki → profile → **Personal Access Tokens**) in `.env` |
 | Outlook | see below |
+| Slack | `daytrace connect slack` (below) |
 | Granola notes | `daytrace connect granola` (below) |
+
+### Slack messages and huddles
+
+daytrace keeps when you posted and in which channel (or that it was a DM), grouped when messages in the same
+channel are within 10 minutes of each other — the same gap Claude Code and Cursor sessions use. Message text is
+never stored; a permalink opens the burst in Slack. Channel names map to projects through `[project_titles]`
+the same way window titles do. Huddles are meeting blocks; Granola notes taken in them attach like calendar
+meetings.
+
+`daytrace connect slack` signs in to [Slack's hosted MCP server](https://docs.slack.dev/ai/slack-mcp-server/)
+in the browser — the same one Cursor uses, so there is no Slack app to register. Your workspace admin may need
+to have approved Slack MCP (they already have if the Cursor Slack plugin works). The sign-in is kept in
+`~/.daytrace/slack-token.json`; `daytrace disconnect slack` removes it.
 
 ### Outlook calendar and mail
 

@@ -48,7 +48,7 @@ function stretches(blocks: Block[], bridgeMs: number): Block[] {
     run = [];
   };
   for (const b of sorted) {
-    if (b.evidence === "scheduled") { out.push(b); continue; }
+    if (b.evidence === "scheduled" || b.group === "meeting") { out.push(b); continue; }
     if (run.length && +new Date(b.start) - runEnd > bridgeMs) flush();
     run.push(b);
     runEnd = Math.max(run.length > 1 ? runEnd : 0, +new Date(b.end));

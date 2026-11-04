@@ -59,19 +59,29 @@ def _meeting_notes(rows, start: datetime, end: datetime, now: datetime, people: 
     found = notes.notes_between(folder, start, min(end, now))
     if not found:
         return []
-    calendar = sorted((max(parse_iso(r["start_at"]), start), min(parse_iso(r["end_at"]), end), r) for r in rows
-                      if r["source"] == "outlook_calendar" and r["sensitivity"] != "private" and r["end_at"])
-    out = []
-    for n, i in zip(found, notes.match(found, [(s, e) for s, e, _ in calendar])):
+    def hosts(source, category=None):
+        return sorted((max(parse_iso(r["start_at"]), start), min(parse_iso(r["end_at"]), end), r)
+                      for r in rows if r["source"] == source and r["sensitivity"] != "private" and r["end_at"]
+                      and (category is None or r["category"] == category))
+
+    out, leftover = [], list(found)
+    for group in (hosts("outlook_calendar"), hosts("slack", "meeting")):
+        still = []
+        for n, i in zip(leftover, notes.match(leftover, [(s, e) for s, e, _ in group])):
+            if i is None:
+                still.append(n)
+                continue
+            digest = notes.digest(folder, n["id"], people.names, people.me)
+            if not any(digest.values()):
+                continue
+            s, e, r = group[i]
+            out.append({"time": f"{clock(s)}–{clock(e)}",
+                        "title": episodes.shared_title(r, json.loads(r["attrs"] or "{}")), **digest})
+        leftover = still
+    for n in leftover:
         digest = notes.digest(folder, n["id"], people.names, people.me)
-        if not any(digest.values()):
-            continue
-        if i is None:
-            when, title = clock(parse_iso(n["meeting_at"])), None
-        else:
-            s, e, r = calendar[i]
-            when, title = f"{clock(s)}–{clock(e)}", episodes.shared_title(r, json.loads(r["attrs"] or "{}"))
-        out.append({"time": when, "title": title, **digest})
+        if any(digest.values()):
+            out.append({"time": clock(parse_iso(n["meeting_at"])), "title": None, **digest})
     return out
 
 

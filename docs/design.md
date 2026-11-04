@@ -37,7 +37,12 @@ Raw ActivityWatch events are purged from ActivityWatch after `[retention] activi
 
 The Granola adapter is the exception to this path: it yields no events. It copies new or changed notes to
 Markdown files (below), so note text never enters the database. The day view matches each note to the calendar
-meeting running when it was started, or starting within 15 minutes (`adapters/granola.py: match`).
+meeting running when it was started, or starting within 15 minutes (`adapters/granola.py: match`); leftover notes
+match Slack huddles the same way.
+
+Slack MCP search returns your messages; they are grouped per channel on the same 10-minute gap as Claude Code and
+Cursor sessions, stored as one point per burst (channel, count, permalink, never text). Huddles are `plan`
+meetings so Granola notes can attach.
 
 ## Storage
 
@@ -94,7 +99,7 @@ note|summarize|sync|backup`), so all logic stays in Python. Windows: menu-bar ic
 
 ## Not yet
 
-- Google Drive activity, Jira, Teams chat.
+- Google Drive activity, Jira, Teams chat, Slack message summaries for the week/month LLM request.
 - Settings UI (rules editor, sources on/off); rules are edited in `~/.daytrace/rules.toml`.
 - `forget` deletes events only, not stored summaries or audit files.
 - Website export of aggregate-only stats.

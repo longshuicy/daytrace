@@ -16,7 +16,7 @@ export interface Block {
   source: string;
   titles: string[];
   url: string | null;
-  /** Meeting notes taken in this meeting (calendar blocks only). */
+  /** Granola notes taken in this meeting or Slack huddle. */
   notes?: Note[];
 }
 
@@ -80,6 +80,7 @@ export interface Summary {
   counts: {
     commits: number; prs: number; reviews: number; pushes: number; wiki: number; issues: number;
     meetings: number; meeting_min: number; emails_sent: number; emails_received: number;
+    chats_sent: number;
   };
 }
 
@@ -215,6 +216,7 @@ export interface PeriodDay {
   active_min: number;
   meeting_min: number;
   emails_sent: number;
+  chats_sent: number;
   focus_min: number;
 }
 
@@ -229,7 +231,7 @@ export interface Period {
   totals: {
     active_min: number; avg_active_min: number; avg_active_min_all: number; workdays: number; data_days: number;
     meeting_min: number; meetings: number;
-    emails_sent: number; emails_received: number;
+    emails_sent: number; emails_received: number; chats_sent: number;
   };
   focus: (Focus & { date: string }) | null;
   commits: Commits | null;

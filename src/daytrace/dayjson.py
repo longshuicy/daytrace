@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
 from .adapters.granola import match
+from .adapters.slack import HUDDLE, huddle_window
 from .models import parse_iso
 from .report import day_bounds, merge, total
 
@@ -44,6 +45,13 @@ def group_of(category: str, sensitivity: str) -> str:
     return _GROUP_OF.get(category, "other")
 
 
+def category_of(r) -> str:
+    """Huddle preview windows are chat in the database; the day view counts them as meetings."""
+    if r["sensitivity"] != "private" and huddle_window(r["title"]):
+        return "meeting"
+    return r["category"]
+
+
 def page_name(r, attrs: dict) -> str | None:
     """A browser page's site, or its title when the title names no site."""
     if attrs.get("site"):
@@ -70,6 +78,8 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             continue
         if r["end_at"]:
             s, e = max(parse_iso(r["start_at"]), start), min(parse_iso(r["end_at"]), end)
+            if huddle_window(r["title"]) and r["sensitivity"] != "private":
+                e = max(e, min(s + HUDDLE, end))
             if e <= s:
                 continue
             if r["category"] == "idle":
@@ -89,7 +99,7 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
     private = [(s, e) for r, s, e in spans if r["sensitivity"] == "private"]
     by_group = defaultdict(list)
     for r, s, e in spans:
-        by_group[group_of(r["category"], r["sensitivity"])].append((s, e))
+        by_group[group_of(category_of(r), r["sensitivity"])].append((s, e))
 
     point_counts = Counter(p["category"] for p in points if p["sensitivity"] != "private")
     project_points = defaultdict(Counter)
@@ -116,7 +126,9 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
     project_rows.sort(key=lambda r: (-r["minutes"], r["project"] is None, r["project"] or ""))
     longest = _longest_focus(spans, idle)
     # Meetings come from the calendar; Zoom windows seen by ActivityWatch would double count.
-    calendar = [(s, e) for r, s, e in spans if r["kind"] == "plan" and r["sensitivity"] != "private"]
+    plans = [(s, e) for r, s, e in spans if r["kind"] == "plan" and r["sensitivity"] != "private"]
+    huddle_iv = merge([(s, e) for r, s, e in spans
+                       if huddle_window(r["title"]) and r["sensitivity"] != "private"])
     active = [(s, e) for _, s, e in spans] + [(parse_iso(p["start_at"]),) * 2 for p in points]
 
     summary = {
@@ -132,9 +144,12 @@ def build(day: date, rows: list[sqlite3.Row], statuses: dict[str, dict], counts:
             "commits": point_counts["commit"], "prs": point_counts["pr"],
             "reviews": point_counts["review"], "pushes": point_counts["push"],
             "wiki": point_counts["wiki"], "issues": point_counts["issue"],
-            "meetings": len(calendar),
-            "meeting_min": _minutes(total(calendar)),
+            "meetings": len(plans) + len(huddle_iv),
+            "meeting_min": _minutes(total(plans + huddle_iv)),
             "emails_sent": point_counts["email"], "emails_received": received,
+            "chats_sent": sum(json.loads(p["attrs"] or "{}").get("count", 1) for p in points
+                              if p["source"] == "slack" and p["category"] == "chat"
+                              and p["sensitivity"] != "private"),
         },
     }
     return {
@@ -281,7 +296,7 @@ def _owners(rows: list) -> list[tuple[str, bool | None]] | None:
         return split([r for r in shown if r["project"]], False, "untagged")
     if not shown:
         return split(sessions, False, "untagged") if sessions else [_unclaimed(rows)]
-    if any(r["sensitivity"] == "private" or r["category"] in NO_BORROW for r in shown):
+    if any(r["sensitivity"] == "private" or category_of(r) in NO_BORROW for r in shown):
         return [_unclaimed(shown)]
     if sessions and any(r["category"] in HANDS_ON for r in shown):
         return split(sessions, True, "untagged")
@@ -290,7 +305,7 @@ def _owners(rows: list) -> list[tuple[str, bool | None]] | None:
 
 def _unclaimed(rows: list) -> tuple[str, None]:
     """Why no project claims a moment: private time first, then meetings, then mail and chat."""
-    groups = {group_of(r["category"], r["sensitivity"]) for r in rows}
+    groups = {group_of(category_of(r), r["sensitivity"]) for r in rows}
     return (next((g for g in ("private", "meeting", "comms") if g in groups), "untagged"), None)
 
 
@@ -338,7 +353,7 @@ def _blocks(spans: list) -> list[dict]:
     """Merge adjacent spans of the same kind; keep the top titles by time."""
     keyed = defaultdict(list)
     for r, s, e in spans:
-        key = (r["source"], r["category"], r["project"], r["sensitivity"], r["evidence"])
+        key = (r["source"], category_of(r), r["project"], r["sensitivity"], r["evidence"])
         keyed[key].append((s, e, r["title"], r["url"]))
     blocks = []
     for (source, category, project, sensitivity, evidence), items in keyed.items():
@@ -363,25 +378,36 @@ def _blocks(spans: list) -> list[dict]:
             "group": group_of(category, sensitivity), "category": category, "project": project,
             "sensitivity": sensitivity, "evidence": evidence, "source": source,
             "titles": [t for t, _ in b["_titles"].most_common(3)],
-            "url": b["_url"] if source == "outlook_calendar" else None,
+            "url": b["_url"] if source in ("outlook_calendar", "slack") else None,
         })
     return sorted(out, key=lambda b: b["start"])
 
 
 def attach_notes(blocks: list[dict], notes: list[dict]) -> list[dict]:
-    """Give each calendar block the meeting notes taken in it; return the rest as points of their own."""
-    meetings = [b for b in blocks if b["source"] == "outlook_calendar"]
-    for b in meetings:
+    """Give each calendar or Slack huddle block the Granola notes taken in it; leftover notes are points."""
+    calendar = [b for b in blocks if b["source"] == "outlook_calendar"]
+    huddles = [b for b in blocks if b["category"] == "meeting" and b["source"] != "outlook_calendar"]
+    for b in calendar + huddles:
         b["notes"] = []
-    loose = []
-    for n, i in zip(notes, match(notes, [(parse_iso(b["start"]), parse_iso(b["end"])) for b in meetings])):
-        note = {"id": n["id"], "title": n["title"], "url": n["url"], "path": n["path"]}
+    leftover = _give_notes(calendar, list(notes))
+    leftover = _give_notes(huddles, leftover)
+    return [{"at": _local(parse_iso(n["meeting_at"])), "group": "meeting", "category": "notes",
+             "project": None, "sensitivity": "normal", "source": "granola",
+             "id": n["id"], "title": n["title"], "url": n["url"], "path": n["path"]} for n in leftover]
+
+
+def _give_notes(hosts: list[dict], notes: list[dict]) -> list[dict]:
+    """Attach notes to hosts by the Granola match rule (running meeting, else one about to start). Unmatched notes
+    are returned so a later host list (huddles after calendar) can claim them."""
+    if not hosts:
+        return notes
+    leftover = []
+    for n, i in zip(notes, match(notes, [(parse_iso(b["start"]), parse_iso(b["end"])) for b in hosts])):
         if i is None:
-            loose.append({"at": _local(parse_iso(n["meeting_at"])), "group": "meeting", "category": "notes",
-                          "project": None, "sensitivity": "normal", "source": "granola", **note})
+            leftover.append(n)
         else:
-            meetings[i]["notes"].append(note)
-    return loose
+            hosts[i]["notes"].append({"id": n["id"], "title": n["title"], "url": n["url"], "path": n["path"]})
+    return leftover
 
 
 def _longest_focus(spans: list, idle: list) -> dict | None:
@@ -406,9 +432,9 @@ def focus_stretches(spans: list, idle: list) -> list[dict]:
     """
     work, breaks = [], [(s, e, "break") for s, e in idle if e - s > AWAY]
     for r, s, e in spans:
-        if r["sensitivity"] == "private" or group_of(r["category"], r["sensitivity"]) in INTERRUPTS:
+        if r["sensitivity"] == "private" or group_of(category_of(r), r["sensitivity"]) in INTERRUPTS:
             if e - s >= INTERRUPTION:
-                why = "break" if r["sensitivity"] == "private" else group_of(r["category"], r["sensitivity"])
+                why = "break" if r["sensitivity"] == "private" else group_of(category_of(r), r["sensitivity"])
                 breaks.append((s, e, why))
         else:
             work.append((r, s, e))

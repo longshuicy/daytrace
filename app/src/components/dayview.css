@@ -86,6 +86,10 @@ h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
 .tile-value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 .tile-value .fit { font-size: min(30px, 14.5cqi); }  /* "+4492 −3206" on one line */
+.comms-pair { display: flex; gap: 22px; }
+.comms-col { display: flex; flex-direction: column; gap: 1px; }
+.comms-col .n { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+.comms-col .k { font-size: 13px; font-weight: 400; color: var(--muted); }
 .tile-note { color: var(--muted); font-size: 13px; line-height: 1.35; overflow: hidden; flex-shrink: 0;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .tile-note + .tile-note { -webkit-line-clamp: 1; }

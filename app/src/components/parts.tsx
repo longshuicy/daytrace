@@ -40,6 +40,16 @@ export function MeetingNotes({ notes, open }: { notes: Note[]; open: (id: string
   );
 }
 
+/** Email sent and Slack messages as two figures on the Mail & chat tile. */
+export function CommsPair({ emails, chats }: { emails: number; chats: number }) {
+  return (
+    <span className="comms-pair">
+      <span className="comms-col"><span className="n">{emails}</span><span className="k">email</span></span>
+      <span className="comms-col"><span className="n">{chats}</span><span className="k">Slack</span></span>
+    </span>
+  );
+}
+
 export function Change({ insertions, deletions }: { insertions: number; deletions: number }) {
   return <span className="fit"><span className="added">+{insertions}</span> <span className="removed">−{deletions}</span></span>;
 }

@@ -8,7 +8,7 @@ import type { Day, Note, PeriodKind, Source } from "../types";
 import DatePicker from "./DatePicker";
 import DayClock from "./DayClock";
 import { NotePanel } from "./NotePanel";
-import { Change, MeetingNotes, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
+import { Change, CommsPair, MeetingNotes, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard, useSort } from "./parts";
 import PeriodView, { periodLabel, shiftPeriod } from "./PeriodView";
 import Timeline from "./Timeline";
 import { Tooltip, useTooltip } from "./Tooltip";
@@ -131,7 +131,8 @@ function Body({ day, fullDay, setFullDay, view, setView, tooltip }: BodyProps) {
           note={s.counts.meetings ? `${s.counts.meetings} meeting${s.counts.meetings === 1 ? "" : "s"}` : "none on your calendar"}>
           {notes.length > 0 && <MeetingNotes notes={notes} open={setOpenNote} />}
         </Tile>
-        <Tile label="Email sent" value={String(s.counts.emails_sent)} note={`${s.counts.emails_received} received`} />
+        <Tile label="Mail & chat" value={<CommsPair emails={s.counts.emails_sent} chats={s.counts.chats_sent} />}
+          note={`${s.counts.emails_received} email received`} />
         {h.focus && h.focus.minutes >= 10
           ? <Tile label="Longest focus" value={minutes(h.focus.minutes)}
             note={`${h.focus.label} · ${clock(h.focus.start)}–${clock(h.focus.end)}`} />

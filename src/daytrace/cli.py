@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, dayjson, granola, launchd, msgraph, period, summarize
+from . import config, dayjson, granola, launchd, msgraph, period, slack, summarize
 from .adapters import NotConfigured, all_adapters
 from .adapters import granola as granola_notes
 from .models import UTC, iso, parse_iso
@@ -181,6 +181,13 @@ def cmd_connect(args) -> None:
         granola.connect()
         print("\nConnected. Run `daytrace sync --source granola` to copy your notes.")
         return
+    if args.service == "slack":
+        print("Sign in with Slack (the same hosted MCP server Cursor uses). daytrace stores when you posted")
+        print("and in which channel, and huddle times, never message text. No Slack app to register.")
+        print("Granola notes taken in a huddle attach the same way as calendar meetings.\n")
+        slack.connect()
+        print("\nConnected. Run `daytrace sync --source slack` to collect your messages.")
+        return
     print("Sign in with your Microsoft work or school account. daytrace asks only for read-only access to your")
     print("calendar and email metadata (subjects, times, sender domains), never message bodies.\n")
     msgraph.connect()
@@ -188,7 +195,8 @@ def cmd_connect(args) -> None:
 
 
 def cmd_disconnect(args) -> None:
-    done = granola.disconnect() if args.service == "granola" else msgraph.disconnect()
+    done = {"granola": granola.disconnect, "outlook": msgraph.disconnect,
+            "slack": slack.disconnect}[args.service]()
     print("signed out" if done else "wasn't signed in")
 
 
@@ -251,11 +259,11 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("connect", help="sign in to a service that needs it")
-    p.add_argument("service", choices=["outlook", "granola"])
+    p.add_argument("service", choices=["outlook", "granola", "slack"])
     p.set_defaults(func=cmd_connect)
 
     p = sub.add_parser("disconnect", help="forget a service's sign-in")
-    p.add_argument("service", choices=["outlook", "granola"])
+    p.add_argument("service", choices=["outlook", "granola", "slack"])
     p.set_defaults(func=cmd_disconnect)
 
     p = sub.add_parser("agent", help="install or remove the background sync agent")

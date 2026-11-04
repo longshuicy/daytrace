@@ -32,7 +32,7 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
         day = first + timedelta(days=i)
         start, end = day_bounds(day)
         row = {"date": day.isoformat(), "future": day > today, "has_data": False, "active_min": 0, "meeting_min": 0,
-               "emails_sent": 0, "focus_min": 0}
+               "emails_sent": 0, "chats_sent": 0, "focus_min": 0}
         days.append(row)
         if day > today or end <= day_zero:
             continue
@@ -43,7 +43,8 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
         if not row["has_data"]:
             continue
         row.update(active_min=s["active_min"], meeting_min=s["counts"]["meeting_min"],
-                   emails_sent=s["counts"]["emails_sent"], focus_min=(s["longest"] or {}).get("minutes", 0))
+                   emails_sent=s["counts"]["emails_sent"], chats_sent=s["counts"]["chats_sent"],
+                   focus_min=(s["longest"] or {}).get("minutes", 0))
         counts.update({k: v for k, v in s["counts"].items()})
         for p in s["projects"]:
             projects[p["project"]].update({"minutes": p["minutes"], "inferred_min": p["inferred_min"],
@@ -83,6 +84,7 @@ def build(store: Store, first: date, last: date, day_zero: datetime, now: dateti
             "meetings": counts["meetings"],
             "emails_sent": counts["emails_sent"],
             "emails_received": counts["emails_received"],
+            "chats_sent": counts["chats_sent"],
         },
         "focus": best,
         "commits": commits,

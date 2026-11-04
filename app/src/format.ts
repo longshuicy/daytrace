@@ -56,12 +56,14 @@ export const SOURCE_LABEL: Record<string, string> = {
   outlook_calendar: "Outlook calendar",
   outlook_mail: "Outlook mail",
   granola: "Granola",
+  slack: "Slack",
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
   private: "Private",
   meeting: "Meeting",
   email: "Email sent",
+  chat: "Chat",
   commit: "Commit",
   push: "Push",
   pr: "Pull request",

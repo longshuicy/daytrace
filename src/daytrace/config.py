@@ -43,6 +43,7 @@ ENV_TEMPLATE = """\
 # CONFLUENCE_TOKEN=        # wiki > profile > Personal Access Tokens
 # MS_CLIENT_ID=            # Azure app registration, for `daytrace connect outlook`
 # MS_TENANT_ID=
+# Slack: `daytrace connect slack` (Slack MCP; no Slack app to register)
 """
 
 

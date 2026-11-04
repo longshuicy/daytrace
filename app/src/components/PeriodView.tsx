@@ -2,7 +2,7 @@ import { useState } from "react";
 import { summarizePeriod, usePeriod } from "../api";
 import { GROUP_LABEL, ago, clock, minutes, shiftDate, today } from "../format";
 import type { Exclusion, Period, PeriodDay, PeriodKind, ReviewEntry, ReviewRequest, TodoGroup } from "../types";
-import { Change, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard } from "./parts";
+import { Change, CommsPair, ProjectsAndSites, commitNote, ShippedCard, Tile, WorkingOnCard } from "./parts";
 
 const parse = (iso: string) => new Date(`${iso}T12:00:00`);
 const iso = (d: Date) => d.toLocaleDateString("en-CA");
@@ -72,8 +72,8 @@ function Body({ kind, p, openDay }: { kind: PeriodKind; p: Period; openDay: (d: 
   const t = p.totals;
   const word = kind === "week" ? "week" : "month";
   const when = (d: string) => fmt(d, kind === "week" ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" });
-  const spark = (value: (d: PeriodDay) => number, color: string, what: string) =>
-    <Spark kind={kind} p={p} value={value} color={color} what={what} />;
+  const spark = (value: (d: PeriodDay) => number, color: string, what: string, axis = true) =>
+    <Spark kind={kind} p={p} value={value} color={color} what={what} axis={axis} />;
   return (
     <>
       <PeriodStory kind={kind} p={p} />
@@ -86,8 +86,11 @@ function Body({ kind, p, openDay }: { kind: PeriodKind; p: Period; openDay: (d: 
           note={`${t.meetings} meeting${t.meetings === 1 ? "" : "s"}`}>
           {spark((d) => d.meeting_min, "var(--g-meeting)", "Meetings")}
         </Tile>
-        <Tile label={`Email sent · ${word} total`} value={String(t.emails_sent)} note={`${t.emails_received} received`}>
-          {spark((d) => d.emails_sent, "var(--bar)", "Email sent")}
+        <Tile label={`Mail & chat · ${word} total`}
+          value={<CommsPair emails={t.emails_sent} chats={t.chats_sent} />}
+          note={`${t.emails_received} email received`}>
+          {spark((d) => d.emails_sent, "var(--bar)", "Email sent", false)}
+          {spark((d) => d.chats_sent, "var(--g-comms)", "Slack")}
         </Tile>
         {p.focus
           ? <Tile label={`Longest focus · ${word} best`} value={minutes(p.focus.minutes)}
@@ -138,11 +141,12 @@ function Average({ t }: { t: Period["totals"] }) {
 }
 
 /** One small bar per day under a tile: grey stubs for days without data, faint stubs for days still to come. */
-function Spark({ kind, p, value, color, what }:
-  { kind: PeriodKind; p: Period; value: (d: PeriodDay) => number; color: string; what: string }) {
+function Spark({ kind, p, value, color, what, axis = true }:
+  { kind: PeriodKind; p: Period; value: (d: PeriodDay) => number; color: string; what: string; axis?: boolean }) {
   const max = Math.max(...p.days.map(value), 1);
   const withData = p.days.filter((d) => d.has_data && value(d));
-  const label = `${what} per day: ${withData.map((d) => `${what === "Email sent" ? value(d) : minutes(value(d))} on ${fmt(d.date, { weekday: "long", month: "long", day: "numeric" })}`).join(", ") || "nothing yet"}`;
+  const counts = what === "Email sent" || what === "Slack";
+  const label = `${what} per day: ${withData.map((d) => `${counts ? value(d) : minutes(value(d))} on ${fmt(d.date, { weekday: "long", month: "long", day: "numeric" })}`).join(", ") || "nothing yet"}`;
   return (
     <div className="spark" role="img" aria-label={label}>
       <div className="spark-bars" style={{ gridTemplateColumns: `repeat(${p.days.length}, minmax(0, 1fr))`, gap: kind === "week" ? 4 : 1 }}>
@@ -151,7 +155,7 @@ function Spark({ kind, p, value, color, what }:
             style={d.has_data && value(d) ? { height: Math.max(3, (value(d) / max) * 28), background: color } : undefined} />
         ))}
       </div>
-      {kind === "week" ? (
+      {axis && (kind === "week" ? (
         <div className="spark-labels week" aria-hidden="true">
           {p.days.map((d) => (
             <span key={d.date} className={d.date === p.today ? "today" : d.future ? "future" : undefined}>
@@ -165,7 +169,7 @@ function Spark({ kind, p, value, color, what }:
           {p.today >= p.start && p.today <= p.end && <span className="today">{parse(p.today).getDate()}</span>}
           <span>{p.days.length}</span>
         </div>
-      )}
+      ))}
     </div>
   );
 }

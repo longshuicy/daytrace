@@ -45,7 +45,8 @@ Every source is optional.
 | GitHub | PRs, reviews, issues, comments, pushes and releases from your activity feed |
 | Confluence (Data Center) | pages and blog posts you created or edited, your comments |
 | Outlook (Microsoft Graph) | meeting subjects and times; sent and received mail subjects, times and the other side's domains |
-| [Granola](https://www.granola.ai/) | your meeting notes, copied as Markdown files |
+| Slack | your sent messages (channel, time, permalink, never text) grouped in 10-minute bursts; huddles as meetings |
+| [Granola](https://www.granola.ai/) | your meeting notes, copied as Markdown files; huddle notes attach like calendar meetings |
 
 ## Quick start
 
@@ -69,9 +70,10 @@ Then connect the sources you use and, optionally, build the desktop app. See [do
 - **Private means excluded.** Anything matching `[private]` in `~/.daytrace/rules.toml` (apps, title patterns,
   folders, browser profiles), and any Outlook meeting marked private, is stored as a bare time block: no app,
   title, URL or project. Incognito windows aren't stored at all.
-- **Minimal metadata.** Mail and meetings keep subjects, times and counts, never bodies or addresses. Granola
-  notes are copied as Markdown files to `~/.daytrace/notes/`, never into the database. Claude Code and Cursor keep
-  session timing, never prompts. Titles are scrubbed of tokens and keys, and URLs lose their query strings.
+- **Minimal metadata.** Mail and meetings keep subjects, times and counts, never bodies or addresses. Slack keeps
+  channel, time and a permalink, never message text. Granola notes are copied as Markdown files to
+  `~/.daytrace/notes/`, never into the database. Claude Code and Cursor keep session timing, never prompts.
+  Titles are scrubbed of tokens and keys, and URLs lose their query strings.
 - **The LLM sees only what you approve.** Week and month summaries are opt-in. daytrace builds the request
   (scrubbed, people's names removed, private time as a single total), saves it to `~/.daytrace/audit/`, and shows
   it to you. You can take anything out; nothing is sent until you press **Send**, and then only once.
@@ -89,6 +91,7 @@ flowchart LR
     GH[GitHub]
     CF[Confluence]
     OL[Outlook via Graph]
+    SL[Slack]
     GR[Granola notes]
   end
   subgraph Mac["This Mac (~/.daytrace)"]
@@ -122,6 +125,7 @@ stored. The desktop app shells out to the CLI, so all the logic lives in Python.
 | Window tracking | [ActivityWatch](https://activitywatch.net/) |
 | Outlook | [Microsoft Graph](https://learn.microsoft.com/graph/overview), device-code sign-in |
 | Meeting notes | [Granola's MCP server](https://docs.granola.ai/help-center/sharing/integrations/mcp), device-code sign-in |
+| Slack | [Slack's hosted MCP server](https://docs.slack.dev/ai/slack-mcp-server/), browser sign-in |
 
 ## Development
 
