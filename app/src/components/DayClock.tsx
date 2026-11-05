@@ -1,11 +1,41 @@
 import { arc } from "d3";
 import { GROUP_LABEL, LANES, clock, colorVar, minutes } from "../format";
-import type { Day, GroupKey } from "../types";
+import type { Block, Day, GroupKey } from "../types";
 import { BlockDetail, PointDetail } from "./details";
 import type { useTooltip } from "./Tooltip";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const hoursApart = (a: number, b: number) => Math.min(Math.abs(a - b), 24 - Math.abs(a - b));
+const MEETING_SEAM = 2;  // px along the ring between meetings that touch
+
+/** End angle of each block. A meeting that starts against the next one stops a hairline early. */
+function meetingEnds(blocks: Block[], ringOf: (g: GroupKey) => number, angle: (iso: string) => number,
+  radius: (ring: number) => number): number[] {
+  const ends = blocks.map((b) => angle(b.end));
+  const byRing = new Map<number, number[]>();
+  blocks.forEach((b, k) => {
+    const ring = ringOf(b.group);
+    if (b.group !== "meeting" || ring < 0) return;
+    const list = byRing.get(ring) ?? [];
+    list.push(k);
+    byRing.set(ring, list);
+  });
+  for (const [ring, ks] of byRing) {
+    const seam = MEETING_SEAM / radius(ring);
+    for (const a of ks) {
+      const end = ends[a];
+      let need = 0;
+      for (const c of ks) {
+        if (c === a) continue;
+        const gap = angle(blocks[c].start) - end;
+        if (gap >= 0 && gap < seam) need = Math.max(need, seam - gap);
+      }
+      const span = end - angle(blocks[a].start);
+      if (need > 0 && span - need >= 0.012) ends[a] -= need;
+    }
+  }
+  return ends;
+}
 
 interface Props {
   day: Day;
@@ -39,6 +69,7 @@ export default function DayClock({ day, tooltip, size = 300, compact = false }: 
     .startAngle((d) => d.s)
     .endAngle((d) => Math.max(d.e, d.s + 0.012))
     .cornerRadius(compact ? 1.5 : 3);
+  const ends = meetingEnds(blocks, ringOf, angle, (i) => inner + i * (RING + gap) + RING / 2);
   const now = new Date(day.now).getTime();
   const nowAngle = now >= start && now < start + 86_400_000 ? angle(day.now) : null;
   const nowHour = nowAngle === null ? null : (nowAngle / (2 * Math.PI)) * 24;
@@ -83,7 +114,7 @@ export default function DayClock({ day, tooltip, size = 300, compact = false }: 
         const i = ringOf(b.group);
         if (i < 0) return null;
         return (
-          <path key={k} d={path({ s: angle(b.start), e: angle(b.end), i }) ?? ""} fill={colorVar(b.group)}
+          <path key={k} d={path({ s: angle(b.start), e: ends[k], i }) ?? ""} fill={colorVar(b.group)}
             fillOpacity={compact && (b.group === "other" || b.group === "private") ? 0.5 : 1}
             onMouseMove={tooltip && ((e) => tooltip.show(e, <BlockDetail b={b} />))} onMouseLeave={tooltip?.hide}>
             {!tooltip && <title>{`${GROUP_LABEL[b.group]} ${clock(b.start)}–${clock(b.end)}`}</title>}

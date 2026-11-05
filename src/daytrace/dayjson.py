@@ -350,13 +350,22 @@ def story_view(row: dict | None) -> dict | None:
 
 
 def _blocks(spans: list) -> list[dict]:
-    """Merge adjacent spans of the same kind; keep the top titles by time."""
+    """Merge adjacent spans of the same kind; keep the top titles by time.
+
+    A calendar meeting or huddle is one event and is not merged with the one beside it, so a
+    back-to-back run stays one block per meeting. Observed fragments (a Zoom window, a huddle
+    preview) still join.
+    """
     keyed = defaultdict(list)
     for r, s, e in spans:
-        key = (r["source"], category_of(r), r["project"], r["sensitivity"], r["evidence"])
+        # None for ordinary spans, so they still merge. A plan event never shares this with another.
+        plan = None
+        if r["kind"] == "plan":
+            plan = r["id"] if "id" in r.keys() and r["id"] else (r["title"], r["start_at"])
+        key = (r["source"], category_of(r), r["project"], r["sensitivity"], r["evidence"], plan)
         keyed[key].append((s, e, r["title"], r["url"]))
     blocks = []
-    for (source, category, project, sensitivity, evidence), items in keyed.items():
+    for (source, category, project, sensitivity, evidence, _), items in keyed.items():
         items.sort(key=lambda i: i[0])
         current = None
         for s, e, title, url in items:

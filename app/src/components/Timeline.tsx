@@ -12,6 +12,7 @@ const BAR_H = 14;
 const AXIS_H = 28;
 const NOW_H = 22;  // room under the lanes for the "now" label
 const BRIDGE_MIN = 3;  // bars in one lane closer than this (or 4px) are drawn as one stretch
+const MEETING_SEAM = 2;  // px of the card between meetings that touch, so a run doesn't read as one bar
 const DONE = "done" as const;
 const WORK_START = 8;  // default window, hours
 const WORK_END = 18;
@@ -57,6 +58,21 @@ function stretches(blocks: Block[], bridgeMs: number): Block[] {
   return out;
 }
 
+/** Shorten a meeting bar where another starts against its end. The times stay put; only the paint stops short. */
+function seamMeetings(placed: { b: Block; x0: number; w: number }[]) {
+  const meetings = placed.filter((p) => p.b.group === "meeting");
+  for (const a of meetings) {
+    const end = a.x0 + a.w;
+    let need = 0;
+    for (const c of meetings) {
+      if (c === a) continue;
+      const gap = c.x0 - end;
+      if (gap >= 0 && gap < MEETING_SEAM) need = Math.max(need, MEETING_SEAM - gap);
+    }
+    if (need > 0 && a.w - need >= 2) a.w -= need;
+  }
+}
+
 interface Props {
   day: Day;
   fullDay: boolean;
@@ -94,6 +110,11 @@ export default function Timeline({ day, fullDay, tooltip, setOpenNote }: Props) 
   const bridgeMs = Math.max(BRIDGE_MIN * 60_000, x.invert(4).getTime() - x.invert(0).getTime());
   const bars = LANES.flatMap((g) => stretches(day.blocks.filter((b) => b.group === g), bridgeMs))
     .filter((b) => inView(b.start, b.end));
+  const placed = bars.map((b) => {
+    const x0 = x(new Date(b.start));
+    return { b, x0, w: Math.max(2, x(new Date(b.end)) - x0) };
+  });
+  seamMeetings(placed);
   const shown = done.filter((p) => inView(p.at));
   // Only lanes with something in the window, so a quiet lane doesn't sit empty at work hours.
   const lanes: Row[] = [
@@ -138,9 +159,7 @@ export default function Timeline({ day, fullDay, tooltip, setOpenNote }: Props) 
             {lanes.map((g) => (
               <line key={g} x1={0} x2={plotW} y1={laneY(g) + LANE_H} y2={laneY(g) + LANE_H} stroke="var(--divider)" />
             ))}
-            {bars.map((b, i) => {
-              const x0 = x(new Date(b.start));
-              const w = Math.max(2, x(new Date(b.end)) - x0);
+            {placed.map(({ b, x0, w }, i) => {
               const y = laneY(b.group) + (LANE_H - BAR_H) / 2;
               const note = b.notes?.[0];
               return (

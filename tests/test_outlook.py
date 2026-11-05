@@ -108,6 +108,40 @@ def test_day_counts_only_the_past_and_calendar_meetings(tmp_path, rules):
     assert d["line"].startswith("30m active · 1 meeting")
 
 
+def test_back_to_back_meetings_stay_separate():
+    """Two meetings that share a project and meet at the minute stay two blocks. Window fragments still join."""
+    local = datetime(2026, 10, 22, 0, 0).astimezone()
+
+    def at(h, m=0, s=0):
+        return iso(local + timedelta(hours=h, minutes=m, seconds=s))
+
+    def row(i, start, end, **kw):
+        base = {
+            "id": f"e{i}", "source": "outlook_calendar", "category": "meeting", "project": "pdg",
+            "sensitivity": "normal", "evidence": "scheduled", "kind": "plan", "title": f"Meet {i}",
+            "url": None, "attrs": "{}", "start_at": start, "end_at": end,
+        }
+        base.update(kw)
+        return base
+
+    now = local + timedelta(hours=18)
+    d = dayjson.build(date(2026, 10, 22), [
+        row(1, at(10), at(10, 30), title="Standup"),
+        row(2, at(10, 30), at(11), title="Design review"),
+        row(3, at(14), at(14, 20), title="zoom", kind="span", evidence="observed", source="activitywatch", id="z1"),
+        row(4, at(14, 20, 30), at(14, 40), title="zoom again", kind="span", evidence="observed",
+            source="activitywatch", id="z2"),
+        row(5, at(15), at(15, 10), title="edit", kind="span", evidence="observed", source="activitywatch",
+            category="code", id="c1"),
+        row(6, at(15, 10, 20), at(15, 25), title="edit more", kind="span", evidence="observed",
+            source="activitywatch", category="code", id="c2"),
+    ], {}, {}, ZERO, now)
+    meetings = [b["titles"][0] for b in d["blocks"] if b["group"] == "meeting"]
+    assert meetings == ["Standup", "Design review", "zoom"]
+    assert "zoom again" in next(b["titles"] for b in d["blocks"] if b["titles"][0] == "zoom")
+    assert len([b for b in d["blocks"] if b["group"] == "code"]) == 1
+
+
 def test_away_in_a_meeting_is_still_active(tmp_path, rules):
     s = _store(tmp_path)
     local = datetime(2026, 10, 22, 0, 0).astimezone()
