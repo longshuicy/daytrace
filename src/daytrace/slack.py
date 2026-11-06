@@ -26,6 +26,8 @@ CLIENT_ID = "3660753192626.8903469228982"
 REDIRECT = "http://localhost:8787/callback"
 SCOPES = "search:read.public search:read.private search:read.mpim search:read.im"
 PROTOCOL = "2025-06-18"
+ATTEMPTS = 4  # a 429 is retried this many times, counting the first try
+WAIT_CAP = 30  # seconds; a longer Retry-After is cut so one sync cannot stall for minutes
 
 
 def token_path() -> Path:
@@ -149,6 +151,25 @@ def access_token() -> str:
     return access
 
 
+def _open(req: urllib.request.Request, timeout: float):
+    """Send one Slack request, waiting out a 429. The caller closes the response."""
+    wait = 2.0
+    for attempt in range(ATTEMPTS):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == ATTEMPTS - 1:
+                raise
+            retry = exc.headers.get("Retry-After") if exc.headers else None
+            try:
+                pause = float(retry) if retry else wait
+            except ValueError:
+                pause = wait
+            exc.close()
+            time.sleep(min(max(pause, 0), WAIT_CAP))
+            wait = min(wait * 2, WAIT_CAP)
+
+
 class Session:
     """One MCP session over streamable HTTP: initialize once, then call tools."""
 
@@ -171,7 +192,7 @@ class Session:
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
         req = urllib.request.Request(MCP, data=json.dumps(msg).encode(), headers=headers)
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with _open(req, 60) as resp:
             self.session_id = resp.headers.get("Mcp-Session-Id") or self.session_id
             body = resp.read().decode()
             if notify:

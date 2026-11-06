@@ -1,7 +1,12 @@
 import json
+import urllib.error
 from datetime import date, datetime, timedelta
+from email.message import Message
+from io import BytesIO
 
-from daytrace import dayjson
+import pytest
+
+from daytrace import dayjson, slack
 from daytrace.adapters.claude_code import GAP
 from daytrace.adapters.granola import Granola, notes_between
 from daytrace.adapters.slack import (
@@ -291,3 +296,62 @@ def test_huddle_preview_window_is_a_meeting_block():
     huddle = next(b for b in d["blocks"] if b["group"] == "meeting")
     assert huddle["category"] == "meeting" and huddle["minutes"] == 30
     assert d["summary"]["counts"]["meetings"] == 1
+
+
+class _Headers(dict):
+    def get_content_type(self):
+        return "application/json"
+
+
+class _SlackResp:
+    def __init__(self):
+        self.headers = _Headers({"Mcp-Session-Id": "s"})
+
+    def read(self):
+        return b'{"result": {}}'
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _limited(after: str | None):
+    hdrs = Message()
+    if after is not None:
+        hdrs["Retry-After"] = after
+    return urllib.error.HTTPError("https://mcp.slack.com/mcp", 429, "Too Many Requests", hdrs, BytesIO(b""))
+
+
+def test_slack_waits_out_a_rate_limit(monkeypatch):
+    calls, slept = [], []
+
+    def urlopen(req, timeout=60):
+        calls.append(req)
+        if len(calls) == 1:
+            raise _limited("3")
+        return _SlackResp()
+
+    monkeypatch.setattr(slack.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(slack.time, "sleep", slept.append)
+    monkeypatch.setattr(slack, "access_token", lambda: "token")
+    slack.Session()
+    assert slept == [3.0]
+    assert len(calls) == 3  # the limited initialize, then initialize and the notification
+
+
+def test_slack_gives_up_after_repeated_rate_limits(monkeypatch):
+    calls, slept = [], []
+
+    def urlopen(req, timeout=60):
+        calls.append(req)
+        raise _limited(None)
+
+    monkeypatch.setattr(slack.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(slack.time, "sleep", slept.append)
+    monkeypatch.setattr(slack, "access_token", lambda: "token")
+    with pytest.raises(urllib.error.HTTPError):
+        slack.Session()
+    assert len(calls) == slack.ATTEMPTS
+    assert slept == [2.0, 4.0, 8.0]
