@@ -3,7 +3,8 @@ import sqlite3
 import subprocess
 from datetime import datetime, timedelta
 
-from daytrace.adapters.activitywatch import stalled, to_raw
+from daytrace.adapters.activitywatch import ActivityWatch, stalled, to_raw
+from daytrace.models import parse_iso
 from daytrace.adapters.claude_code import parse_session_file
 from daytrace.adapters.cursor import Cursor
 from daytrace.adapters.git import Git, parse_shortstat
@@ -23,6 +24,49 @@ def test_activitywatch_window_and_afk():
     afk["data"]["status"] = "not-afk"
     assert to_raw("aw-watcher-afk_host", "afkstatus", afk) is None
     assert to_raw("b", "currentwindow", {**e, "duration": 0}) is None
+
+
+def test_activitywatch_purge_drops_aged_noise_and_stored_spans():
+    class AW(ActivityWatch):
+        def __init__(self):
+            super().__init__()
+            self.deleted = []
+
+        def buckets(self):
+            return {"w": {"type": "currentwindow"}, "a": {"type": "afkstatus"}}
+
+        def _events(self, bucket_id, since, until):
+            if bucket_id == "w":
+                return [
+                    {"id": 1, "timestamp": "2026-10-23T01:00:00Z", "duration": 0,
+                     "data": {"app": "Google Chrome", "title": "secret tab"}},
+                    {"id": 2, "timestamp": "2026-10-23T01:00:00Z", "duration": 30,
+                     "data": {"app": "Code", "title": "stored"}},
+                    {"id": 3, "timestamp": "2026-10-23T01:00:00Z", "duration": 30,
+                     "data": {"app": "Code", "title": "not stored yet"}},
+                    {"id": 4, "timestamp": "2026-10-23T23:30:00Z", "duration": 3600,
+                     "data": {"app": "Code", "title": "still open"}},
+                ]
+            return [
+                {"id": 5, "timestamp": "2026-10-23T01:00:00Z", "duration": 600, "data": {"status": "not-afk"}},
+                {"id": 6, "timestamp": "2026-10-23T01:00:00Z", "duration": 600, "data": {"status": "afk"}},
+            ]
+
+        def _request(self, path, params=None, method="GET"):
+            assert method == "DELETE"
+            self.deleted.append(path)
+            return None
+
+    aw = AW()
+    deleted = aw.purge(parse_iso("2026-10-24T00:00:00Z"), parse_iso("2026-10-22T00:00:00Z"),
+                       lambda ids: {"w:2", "a:6"} & set(ids))
+    assert deleted == 4
+    assert aw.deleted == [
+        "/buckets/w/events/1",
+        "/buckets/w/events/2",
+        "/buckets/a/events/5",
+        "/buckets/a/events/6",
+    ]
 
 
 def test_activitywatch_flags_a_stopped_window_watcher():

@@ -52,18 +52,27 @@ class ActivityWatch:
 
     def purge(self, before: datetime, since: datetime,
               ingested: Callable[[list[str]], set[str]]) -> int:
-        """Delete raw ActivityWatch events in [since, before) that daytrace has already stored."""
+        """Delete raw ActivityWatch events that ended before `before`.
+
+        Spans daytrace keeps are removed only after they are in the store. Spans it never keeps
+        (shorter than a second, or not-afk) are removed once they age out, so window titles don't
+        sit in ActivityWatch past the retention window. A span that runs past `before` stays.
+        """
         deleted = 0
-        for bucket_id in self.buckets():
+        for bucket_id, bucket in self.buckets().items():
             events = self._events(bucket_id, since, before)
             ids = {f"{bucket_id}:{e['id']}": e for e in events}
-            keep = ingested(list(ids))
+            stored = ingested(list(ids))
             for source_id, e in ids.items():
                 end = parse_iso(e["timestamp"]) + timedelta(seconds=e.get("duration", 0))
-                if source_id in keep and end < before:
-                    path = f"/buckets/{urllib.parse.quote(bucket_id)}/events/{e['id']}"
-                    self._request(path, method="DELETE")
-                    deleted += 1
+                if end >= before:
+                    continue
+                kept = to_raw(bucket_id, bucket["type"], e) is not None
+                if kept and source_id not in stored:
+                    continue
+                path = f"/buckets/{urllib.parse.quote(bucket_id)}/events/{e['id']}"
+                self._request(path, method="DELETE")
+                deleted += 1
         return deleted
 
 
