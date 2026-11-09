@@ -7,7 +7,9 @@ focused apps) and reconstructs what each day looked like. Setup: [setup.md](setu
 
 ## Principles
 
-1. **Local-first.** Data lives in `~/.daytrace/`. Only a reviewed week/month request ever goes to an LLM.
+1. **Local-first.** Data lives in `~/.daytrace/`. A week or month summary leaves only after you review the
+   request. The optional MCP server, once you turn it on with `daytrace kb enable`, answers Cursor, Claude Code,
+   and Claude Desktop from the same files; those apps send the answer on to their model.
 2. **Known vs. inferred.** Every event carries an evidence level. Meetings are taken as attended; an email
    timestamp means *sent at*. LLM output is always inferred.
 3. **Observe, don't judge.** No scores, streaks or goals. Summaries point out tensions with the evidence behind
@@ -33,7 +35,8 @@ Each adapter (`src/daytrace/adapters/`) implements `fetch(since, until) -> RawEv
    `daytrace retag` applies new patterns to events already stored.
 4. Scrub secrets from titles (`scrub.py`), strip URL query strings.
 
-Raw ActivityWatch events are purged from ActivityWatch after `[retention] activitywatch_raw_days`.
+Raw ActivityWatch events are purged from ActivityWatch after `[retention] activitywatch_raw_days`: stored ones
+once they are in the database, ones daytrace never keeps (sub-second, not-afk) regardless.
 
 The Granola adapter is the exception to this path: it yields no events. It copies new or changed notes to
 Markdown files (below), so note text never enters the database. The day view matches each note to the calendar
@@ -52,7 +55,8 @@ SQLite at `~/.daytrace/daytrace.db` (`store.py`):
 |---|---|
 | `events` | one row per trace: source, kind (`point`/`span`/`plan`), evidence, times (UTC), category, project, scrubbed title, URL, sensitivity (`normal`/`private`), attrs |
 | `day_summaries` | week/month requests awaiting review and their LLM replies, keyed `week:<sunday>` / `month:<YYYY-MM>` |
-| `cursors`, `meta` | per-source sync cursors and status; `day_zero` |
+| `cursors`, `meta` | per-source sync cursors and status; `day_zero`; whether the knowledge base is on |
+| `kb_docs`, `kb_fts` | the keyword index behind the MCP `search` tool (FTS5): non-private subjects, Granola note Markdown, stored write-ups; rebuilt after each sync and before a search |
 
 Meeting notes live in `~/.daytrace/notes/granola/`: one Markdown file per note, plus `index.json` (title, time,
 Granola URL, file name) and `account.json` (your name as Granola has it, to tell your action items from others').
@@ -69,10 +73,11 @@ between two stretches of the same project counts for it (never meetings, mail, c
 
 ## LLM egress
 
-`egress.py` is the only code path to the LLM (`llm.py`, any OpenAI-compatible endpoint):
+`egress.py` is the only path by which daytrace itself calls an LLM (`llm.py`, any OpenAI-compatible endpoint):
 
 1. Episodes are built from non-private events and merged into one entry per project (or meetings, or activity
-   kind): days, minutes per activity, counts, ≤3 titles, Slack channel names, site names, branch names.
+   kind): days, minutes per activity, counts, ≤3 titles (≤8 for meetings), Slack channel names, site names,
+   branch names.
 2. Per-day patterns, counted locally so the LLM only interprets them (`patterns.py`): project switches,
    back-to-back meetings, the longest meeting-free stretch of the morning, focus stretches of 25+ minutes and what
    ended them, and active time outside 9–5.
@@ -94,6 +99,16 @@ what that thread was across titles, branches, channels and meetings, and whether
 is mentioned only when it changes the thread. A week also asks for next week's todos, taken only from the "mine"
 items still in the request. Week and month share the prompt otherwise. Reply time is dominated by the reply's
 length, not the request's: a month-sized request (~13k tokens) took as long as a week's (~2.5k).
+
+## Knowledge base
+
+`kb.py` is the read side for an agent. `daytrace mcp` speaks newline-delimited JSON-RPC and registers four
+tools: `at` (blocks and points around a time, private spans bare, a meeting's Granola digest and note id),
+`summary` (the day, week, month, or range from `period.build`, plus digests and the "mine" items a later trace
+has not closed; one day also includes its blocks), `search` (SQLite FTS5 over note Markdown, non-window
+subjects, and stored write-ups), and `note` (one note's Markdown). Slack permalinks are omitted. Every result
+passes `egress.check` and is written under `~/.daytrace/audit/mcp/`. The index is rebuilt at the end of `sync`
+and again when a search runs. The week and month summary keeps its own reviewed path.
 
 ## Desktop app
 

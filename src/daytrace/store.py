@@ -1,4 +1,4 @@
-"""SQLite storage for events, cursors and metadata."""
+"""SQLite storage for events, week/month summaries, cursors and metadata (kb.py adds its search index)."""
 
 import json
 import sqlite3

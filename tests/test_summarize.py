@@ -196,12 +196,12 @@ def test_a_channel_is_kept_when_subjects_fill_the_titles():
         row(1, category="commit", title="Fix ingest"),
         row(2, category="commit", title="Open the valve", start_at=iso(at(9, 1))),
         row(3, category="commit", title="Rename the pump", start_at=iso(at(9, 2))),
-        row(4, category="chat", title="#pdg-ncsa · 2 messages", start_at=iso(at(9, 3)), source="slack"),
+        row(4, category="chat", title="#pdg-dev · 2 messages", start_at=iso(at(9, 3)), source="slack"),
     ]
     [pdg] = episodes.entries(episodes.build(rows, start, end, at(13)))[0]
-    assert pdg["key"] == "pdg" and pdg["channels"] == ["#pdg-ncsa"]
+    assert pdg["key"] == "pdg" and pdg["channels"] == ["#pdg-dev"]
     assert pdg["titles"] == ["Fix ingest", "Open the valve", "Rename the pump"]
-    assert episodes.channels_in(episodes.slack_title("* pdg-ncsa (Channel) - Acme Lab - Slack")) == ["#pdg-ncsa"]
+    assert episodes.channels_in(episodes.slack_title("* pdg-dev (Channel) - Acme Lab - Slack")) == ["#pdg-dev"]
 
 
 def test_a_followed_action_item_leaves_the_request(day_store, rules, projects):
@@ -222,7 +222,7 @@ def test_a_followed_action_item_leaves_the_request(day_store, rules, projects):
     later = [
         RawEvent("git", "c2", "point", "recorded", at(12), category="commit", title="Ship the release notes", path=pdg),
         RawEvent("git", "c3", "point", "recorded", at(12, 5), category="commit", title="Open the valve", path=pdg),
-        RawEvent("slack", "s1", "point", "recorded", at(12, 10), category="chat", title="#pdg-ncsa · 2 messages",
+        RawEvent("slack", "s1", "point", "recorded", at(12, 10), category="chat", title="#pdg-dev · 2 messages",
                  path=pdg),
     ]
     sync(day_store, rules, [Fake(later)], at(13))
@@ -230,7 +230,7 @@ def test_a_followed_action_item_leaves_the_request(day_store, rules, projects):
     [meeting] = payload["meetings"]
     assert meeting["project"] == "pdg" and "at" not in meeting
     assert meeting["mine"] == ["Book the demo room"]
-    assert any(e["key"] == "pdg" and "#pdg-ncsa" in e["channels"] for e in payload["entries"])
+    assert any(e["key"] == "pdg" and "#pdg-dev" in e["channels"] for e in payload["entries"])
     before = {"meetings": [{"project": "pdg", "at": iso(at(10)), "mine": ["Write up the release notes"]}]}
     summarize.drop_closed([before], [(at(9), "pdg", "Draft the release notes")])
     assert before["meetings"][0]["mine"] == ["Write up the release notes"]  # a trace from before the meeting

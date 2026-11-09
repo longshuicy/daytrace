@@ -70,6 +70,8 @@ def sync(store: Store, rules: Rules, adapters: list[Adapter], now: datetime) -> 
             result.ok, result.error = False, f"{type(exc).__name__}: {exc}"
         store.set_meta(f"status:{adapter.name}", json.dumps(asdict(result)))
         results.append(result)
+    from .kb import reindex
+    reindex(store)
     return results
 
 

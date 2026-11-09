@@ -31,8 +31,8 @@ TEAMS_VIEWS = {"activity", "chat", "teams", "calendar", "calls", "files", "apps"
 # Traces whose titles say what was done; they come before window titles when picking an entry's titles.
 SUBJECTS = ("commit", "pr", "review", "issue", "wiki", "release")
 MAX_CHANNELS = 5
-# A Slack channel as it is stored: "#pdg-ncsa", "#pdg-ncsa · 2 messages", "Huddle in #pdg-ncsa",
-# or a window title slack_title already rewrote to "#pdg-ncsa - Acme". Issue numbers ("#123") are not channels.
+# A Slack channel as it is stored: "#pdg-dev", "#pdg-dev · 2 messages", "Huddle in #pdg-dev",
+# or a window title slack_title already rewrote to "#pdg-dev - Acme". Issue numbers ("#123") are not channels.
 _CHANNEL = re.compile(r"#([a-z][a-z0-9_-]{0,80})", re.I)
 
 
@@ -173,7 +173,7 @@ def slack_title(title: str) -> str:
 
 
 def channels_in(title: str | None) -> list[str]:
-    """Slack channel names a title mentions, as "#pdg-ncsa". Empty when it names none."""
+    """Slack channel names a title mentions, as "#pdg-dev". Empty when it names none."""
     if not title:
         return []
     found = []

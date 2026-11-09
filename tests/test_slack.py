@@ -187,7 +187,7 @@ def test_day_counts_grouped_messages_and_huddles_get_granola_notes(tmp_path, rul
     sent = (
         _hit(T0)
         + _hit(T0 + timedelta(minutes=2))
-        + _hit(T0 + timedelta(hours=2), channel="C2", name="pdg-ncsa")
+        + _hit(T0 + timedelta(hours=2), channel="C2", name="pdg-dev")
     )
     huddle = _hit(huddle_at, text="bot has started a meeting")
     s = Store(tmp_path / "t.db")
@@ -213,7 +213,7 @@ def test_day_counts_grouped_messages_and_huddles_get_granola_notes(tmp_path, rul
         p["title"] == "Hallway chat" for p in d["points"] if p["source"] == "granola"
     )
     titles = {p["title"] for p in d["points"] if p["source"] == "slack"}
-    assert "#dev · 2 messages" in titles and "#pdg-ncsa" in titles
+    assert "#dev · 2 messages" in titles and "#pdg-dev" in titles
 
 
 def test_calendar_keeps_granola_notes_when_a_huddle_overlaps(tmp_path, rules):

@@ -80,7 +80,8 @@ max_depth = 3
 author_emails = []
 
 [retention]
-# Raw ActivityWatch events older than this are deleted from ActivityWatch once ingested.
+# Raw ActivityWatch events older than this are deleted from ActivityWatch: ones daytrace keeps once they
+# are stored, the rest (sub-second or not-afk) once they age out.
 # Set to 0 to keep raw data forever.
 activitywatch_raw_days = 7
 """

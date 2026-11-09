@@ -118,6 +118,47 @@ cd app && npm install
 
 The app calls `~/.local/bin/daytrace`; set `DAYTRACE_BIN` if yours is elsewhere.
 
+## 5. Knowledge base for AI assistants (optional)
+
+`daytrace mcp` answers four questions from the data already on this Mac: what you were doing at a time
+(`at`), the totals for a day, week, month, or range (`summary`), a keyword search of Granola notes, subjects,
+and stored write-ups (`search`), and one note's Markdown (`note`). Search is SQLite full-text search. Private
+time comes back as a bare span, Slack permalinks are left out, and window titles are not in the search index.
+Each result is scrubbed and copied to `~/.daytrace/audit/mcp/`.
+
+The server answers only after you turn it on. That is the approval: the assistant sends whatever a tool
+returns to its model provider, including stored titles, mail subjects, and note text.
+
+```bash
+daytrace kb enable
+```
+
+Then point the assistant at the server, using the full path from `which daytrace` (desktop apps start with a
+short `PATH` that usually lacks `~/.local/bin`):
+
+```bash
+claude mcp add --scope user daytrace -- "$(which daytrace)" mcp     # Claude Code
+```
+
+```json
+{ "mcpServers": { "daytrace": { "command": "/Users/you/.local/bin/daytrace", "args": ["mcp"] } } }
+```
+
+That block goes in `~/.cursor/mcp.json` for Cursor, or under `mcpServers` in
+`~/Library/Application Support/Claude/claude_desktop_config.json` for Claude Desktop (no admin needed; quit and
+reopen the app). ChatGPT can't run local servers, so it isn't supported. Step-by-step instructions are in the
+wiki: [Connecting AI assistants](https://github.com/longshuicy/daytrace/wiki/Connecting-AI-assistants);
+example questions are in
+[What you can ask daytrace](https://github.com/longshuicy/daytrace/wiki/What-you-can-ask-daytrace).
+
+You can read the same JSON without an agent:
+
+```bash
+daytrace at 2026-10-22T14:37:00
+daytrace summary week
+daytrace search "export pipeline"
+```
+
 ## Uninstall
 
 ```bash

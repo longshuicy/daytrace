@@ -18,7 +18,9 @@ and focused windows, and lays the day out on one timeline: how long you were act
 longest stretch of focus and what ended it, and what you shipped. Week and month views add up the same numbers.
 If you want, an LLM can write a short look back at your week, but only from a request you reviewed first.
 
-Everything is stored on your Mac. Nothing leaves it except that reviewed request.
+Everything is stored on your Mac. A week or month summary leaves only after you review it. Once you turn the
+knowledge base on, Cursor, Claude Code, or Claude Desktop can query it, and those apps send the answers on with
+their prompts.
 
 ## Features
 
@@ -31,6 +33,9 @@ Everything is stored on your Mac. Nothing leaves it except that reviewed request
 - **Meeting notes** from Granola, attached to the calendar meeting they were taken in.
 - **Week and month views**, with an optional LLM summary that points out open loops, recurring topics and
   patterns, and drafts a todo list for the next week.
+- **Ask your AI assistant.** A local MCP server lets Cursor, Claude Code, or Claude Desktop answer "what was I
+  doing at 2:30?", "summarize my week", or "what's still open from Thursday's meeting?" from your own data.
+  See [what you can ask](https://github.com/longshuicy/daytrace/wiki/What-you-can-ask-daytrace).
 - **Menu-bar app and a floating day clock**, with background sync every 10 minutes.
 
 ## Sources
@@ -62,11 +67,20 @@ daytrace agent install           # sync every 10 minutes in the background
 
 Then connect the sources you use and, optionally, build the desktop app. See [docs/setup.md](docs/setup.md).
 
+To ask an AI assistant about your day, turn the knowledge base on and add `daytrace mcp` to Cursor, Claude Code,
+or Claude Desktop ([how](https://github.com/longshuicy/daytrace/wiki/Connecting-AI-assistants)):
+
+```bash
+daytrace kb enable                                                # the approval step; see Privacy
+claude mcp add --scope user daytrace -- "$(which daytrace)" mcp   # Claude Code
+daytrace summary week                                             # the same answers, no assistant
+```
+
 ## Privacy
 
 - **Everything stays on your Mac** in `~/.daytrace/`. No telemetry, no cloud store. daytrace only reads from your
-  sources, with one exception: once ActivityWatch's raw events are stored, daytrace deletes them from
-  ActivityWatch after 7 days (`[retention]` in `rules.toml`; set it to 0 to keep them).
+  sources, with one exception: daytrace deletes ActivityWatch's raw events from ActivityWatch after 7 days, the ones
+  it keeps once they are stored and the rest regardless (`[retention]` in `rules.toml`; set it to 0 to keep them).
 - **Private means excluded.** Anything matching `[private]` in `~/.daytrace/rules.toml` (apps, title patterns,
   folders, browser profiles), and any Outlook meeting marked private, is stored as a bare time block: no app,
   title, URL or project. Incognito windows aren't stored at all.
@@ -74,9 +88,13 @@ Then connect the sources you use and, optionally, build the desktop app. See [do
   channel, time and a permalink, never message text. Granola notes are copied as Markdown files to
   `~/.daytrace/notes/`, never into the database. Claude Code and Cursor keep session timing, never prompts.
   Titles are scrubbed of tokens and keys, and URLs lose their query strings.
-- **The LLM sees only what you approve.** Week and month summaries are opt-in. daytrace builds the request
-  (scrubbed, people's names removed, private time as a single total), saves it to `~/.daytrace/audit/`, and shows
-  it to you. You can take anything out; nothing is sent until you press **Send**, and then only once.
+- **The week and month summary is only what you approve.** daytrace builds the request (scrubbed, people's names
+  removed, private time as a single total), saves it to `~/.daytrace/audit/`, and shows it to you. You can take
+  anything out; nothing is sent until you press **Send**, and then only once.
+- **The knowledge base is a separate switch.** `daytrace kb enable` lets Cursor, Claude Code, or Claude Desktop call a
+  local MCP server. A tool can return stored titles, mail subjects, meeting subjects, and Granola note text, which that
+  app then sends to its model. Private-rule spans stay bare, Slack message text was never stored, and permalinks
+  are left out. Each result is copied to `~/.daytrace/audit/mcp/`.
 - **You can delete.** `daytrace forget START END` deletes the events in a date range (stored summaries, audit files
   and notes stay); `rm -rf ~/.daytrace` removes everything.
 
@@ -104,10 +122,14 @@ flowchart LR
     DB --> EG[Egress gate + audit]
     NT -- topics, action items --> EG
     EG --> RV{You review}
+    DB --> KB[Knowledge base: FTS index + audit]
+    NT --> KB
+    KB --> MCP[daytrace mcp]
   end
   Sources --> AD
   LD[launchd, every 10 min] -.-> AD
   RV -- Send --> LLM[OpenAI-compatible LLM]
+  MCP -- stdio, after kb enable --> AI[Cursor / Claude Code / Claude Desktop]
 ```
 
 Each source has an adapter that reads new traces since its last sync. Intake applies your private rules, assigns a
@@ -122,6 +144,7 @@ stored. The desktop app shells out to the CLI, so all the logic lives in Python.
 | Scheduling | [launchd](https://www.launchd.info/) agent |
 | Desktop | [Tauri 2](https://v2.tauri.app/) + React + [D3](https://d3js.org/), built with Vite |
 | LLM | any OpenAI-compatible endpoint, such as [OpenRouter](https://openrouter.ai/) |
+| Assistant access | local stdio MCP server (`daytrace mcp`), SQLite FTS5 search |
 | Window tracking | [ActivityWatch](https://activitywatch.net/) |
 | Outlook | [Microsoft Graph](https://learn.microsoft.com/graph/overview), device-code sign-in |
 | Meeting notes | [Granola's MCP server](https://docs.granola.ai/help-center/sharing/integrations/mcp), device-code sign-in |

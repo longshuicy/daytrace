@@ -1,5 +1,6 @@
 //! daytrace desktop shell: a menu-bar icon, an always-on-top day clock, and a day view window.
-//! All data comes from the `daytrace` CLI (`daytrace day --json`), so stats live in one place.
+//! All data comes from the `daytrace` CLI (`day`, `period`, `note`, `summarize`, `sync`, `backup`), so stats
+//! live in one place.
 
 use std::path::PathBuf;
 use std::process::Command;

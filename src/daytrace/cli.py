@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import date, datetime, time
 
-from . import config, dayjson, granola, launchd, msgraph, period, slack, summarize
+from . import config, dayjson, granola, kb, launchd, mcp, msgraph, period, slack, summarize
 from .adapters import NotConfigured, all_adapters
 from .adapters import granola as granola_notes
 from .models import UTC, iso, parse_iso
@@ -200,6 +200,57 @@ def cmd_disconnect(args) -> None:
     print("signed out" if done else "wasn't signed in")
 
 
+def cmd_at(args) -> None:
+    store, _ = _open()
+    print(dayjson.dumps(kb.at(store, _when(args.time), args.window, datetime.now(UTC))))
+
+
+def cmd_summary(args) -> None:
+    store, _ = _open()
+    now = datetime.now(UTC)
+    if args.start or args.end:
+        if not (args.start and args.end):
+            raise ValueError("a range needs both --start and --end")
+        first, last, kind = date.fromisoformat(args.start), date.fromisoformat(args.end), None
+    else:
+        anchor = date.fromisoformat(args.date) if args.date else date.today()
+        kind = args.kind
+        if kind == "week":
+            first, last = period.week_of(anchor)
+        elif kind == "month":
+            first, last = period.month_of(anchor)
+        else:
+            first = last = anchor
+    print(dayjson.dumps(kb.summary(store, first, last, now, kind)))
+
+
+def cmd_search(args) -> None:
+    store, _ = _open()
+    start = day_bounds(date.fromisoformat(args.start))[0] if args.start else None
+    end = day_bounds(date.fromisoformat(args.end))[1] if args.end else None
+    print(dayjson.dumps(kb.search(store, args.query, datetime.now(UTC), args.project, start, end)))
+
+
+def cmd_kb(args) -> None:
+    store, _ = _open()
+    day_zero(store)
+    kb.enable(store)
+    print("Knowledge base is on. Cursor, Claude Code, and Claude Desktop send tool results to their model provider.")
+    print("Private time stays a bare span. Slack permalinks stay out. Search covers notes and subjects.")
+    print(dayjson.dumps(kb.at(store, datetime.now(UTC), 15, datetime.now(UTC))))
+
+
+def cmd_mcp(args) -> None:
+    mcp.serve()
+
+
+def _when(value: str) -> datetime:
+    if value == "now":
+        return datetime.now(UTC)
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt.astimezone() if dt.tzinfo is None else dt
+
+
 def cmd_agent(args) -> None:
     if args.action == "install":
         print(f"installed {launchd.install(args.interval * 60)}")
@@ -249,7 +300,7 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("status", help="sources, counts, last sync").set_defaults(func=cmd_status)
 
-    p = sub.add_parser("forget", help="delete everything stored for a date range")
+    p = sub.add_parser("forget", help="delete the events stored for a date range")
     p.add_argument("start", help="YYYY-MM-DD")
     p.add_argument("end", help="YYYY-MM-DD, inclusive")
     p.set_defaults(func=cmd_forget)
@@ -265,6 +316,32 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("disconnect", help="forget a service's sign-in")
     p.add_argument("service", choices=["outlook", "granola", "slack"])
     p.set_defaults(func=cmd_disconnect)
+
+    p = sub.add_parser("at", help="what was happening around a time, as JSON")
+    p.add_argument("time", help="ISO-8601 time, or now")
+    p.add_argument("--window", type=int, default=15, help="minutes either side")
+    p.set_defaults(func=cmd_at)
+
+    p = sub.add_parser("summary", help="totals for a day, week, month, or range, as JSON")
+    p.add_argument("kind", nargs="?", choices=["day", "week", "month"], default="day")
+    p.add_argument("--date", help="YYYY-MM-DD inside the day, week, or month")
+    p.add_argument("--start", help="YYYY-MM-DD, with --end")
+    p.add_argument("--end", help="YYYY-MM-DD, inclusive")
+    p.set_defaults(func=cmd_summary)
+
+    p = sub.add_parser("search", help="search notes, subjects, and stored write-ups")
+    p.add_argument("query")
+    p.add_argument("--project")
+    p.add_argument("--start", help="YYYY-MM-DD, inclusive")
+    p.add_argument("--end", help="YYYY-MM-DD, inclusive")
+    p.set_defaults(func=cmd_search)
+
+    p = sub.add_parser("kb", help="turn the knowledge base on for MCP clients")
+    p.add_argument("action", choices=["enable"])
+    p.set_defaults(func=cmd_kb)
+
+    sub.add_parser("mcp", help="stdio MCP server for Cursor, Claude Code, and Claude Desktop").set_defaults(
+        func=cmd_mcp)
 
     p = sub.add_parser("agent", help="install or remove the background sync agent")
     p.add_argument("action", choices=["install", "uninstall"])
