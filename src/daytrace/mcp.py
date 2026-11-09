@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import date, datetime
 
-from . import config, kb, period
+from . import __version__, config, kb, period
 from .models import UTC
 from .report import day_bounds
 from .store import Store
@@ -128,7 +128,7 @@ def handle(msg: dict) -> dict:
         return {
             "protocolVersion": version,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "daytrace", "version": "1.0.0"},
+            "serverInfo": {"name": "daytrace", "version": __version__},
         }
     if method == "ping":
         return {}

@@ -1,6 +1,6 @@
 [project]
 name = "daytrace"
-version = "1.0.0"
+version = "1.1.0"
 description = "A life, in little traces: a local-first reconstruction of your workday."
 readme = "README.md"
 license = "MIT"
