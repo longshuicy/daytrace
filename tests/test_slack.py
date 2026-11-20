@@ -16,6 +16,7 @@ from daytrace.adapters.slack import (
     cluster,
     huddle_raws,
     huddle_window,
+    local_days,
     next_cursor,
     parse_hit,
     parse_match,
@@ -73,9 +74,29 @@ class SlackSession:
 
     def call(self, name, args):
         self.calls.append((name, args))
-        if "from:me" in (args.get("filters") or ""):
+        if (args.get("filters") or "").startswith("from:@me"):
             return self.sent
         return self.huddles
+
+
+def test_sent_messages_are_the_signed_in_user_one_day_at_a_time():
+    session = SlackSession(_hit(T0))
+    start, end = T0 - timedelta(days=1, hours=2), T0 + timedelta(hours=1)
+    list(Slack(session=lambda: session).fetch(start, end))
+    sent = [a["filters"] for _, a in session.calls if (a.get("filters") or "").startswith("from:")]
+    assert sent == [f"from:@me on:{day.isoformat()}" for day in local_days(start, end)]
+    assert len(sent) >= 2  # the range crosses a local midnight
+
+
+def test_resync_drops_chats_the_search_no_longer_returns(tmp_path, rules):
+    now = T0 + timedelta(hours=2)
+    s = Store(tmp_path / "t.db")
+    s.set_meta("day_zero", iso(ZERO))
+    sync(s, rules, [Slack(session=lambda: SlackSession(_hit(T0)))], now)
+    assert s.conn.execute("SELECT COUNT(*) FROM events WHERE source = 'slack'").fetchone()[0] == 1
+    s.set_cursor("slack", iso(ZERO), now)
+    sync(s, rules, [Slack(session=lambda: SlackSession(""))], now)
+    assert s.conn.execute("SELECT COUNT(*) FROM events WHERE source = 'slack'").fetchone()[0] == 0
 
 
 def test_messages_in_one_channel_group_on_the_same_gap_as_agent_sessions():

@@ -32,19 +32,31 @@ class Slack:
     def __init__(self, session: Callable[[], slack.Session] | None = None):
         self.session = session or slack.Session
 
+    def window(self, since: datetime, until: datetime) -> tuple[datetime, datetime]:
+        """The range fetch() reads completely. Stored Slack events in it that weren't returned are removed."""
+        return since, until
+
     def fetch(self, since: datetime, until: datetime) -> Iterable[RawEvent]:
         s = self.session()  # Slack.Session raises NotConfigured before sign-in
-        after = (since - timedelta(days=1)).astimezone(UTC).strftime("%Y-%m-%d")
-        sent = [m for m in self._search(s, since, until, filters=f"from:me after:{after}")
-                if not huddle_start(m)]
-        huddles, seen = [], set()
-        for phrase in HUDDLE_PHRASES:
-            for m in self._search(s, since, until, keywords=[phrase], filters=f"after:{after}",
-                                  include_bots=True):
+        sent, seen = [], set()
+        # Bare `from:me` is a username search, not the signed-in user. `on:` is one local day: Slack
+        # search stops after 400 hits and reports no further page, so a longer range would be cut off.
+        for day in local_days(since, until):
+            for m in self._search(s, since, until, filters=f"from:@me on:{day.isoformat()}"):
                 key = (m["channel_id"], m["at"])
-                if huddle_start(m) and key not in seen:
-                    seen.add(key)
-                    huddles.append(m)
+                if key in seen or huddle_start(m):
+                    continue
+                seen.add(key)
+                sent.append(m)
+        huddles, seen_h = [], set()
+        for phrase in HUDDLE_PHRASES:
+            for day in local_days(since, until):
+                for m in self._search(s, since, until, keywords=[phrase], filters=f"on:{day.isoformat()}",
+                                      include_bots=True):
+                    key = (m["channel_id"], m["at"])
+                    if huddle_start(m) and key not in seen_h:
+                        seen_h.add(key)
+                        huddles.append(m)
         for group in cluster(sent):
             yield burst_raw(group)
         yield from huddle_raws(huddles)
@@ -67,6 +79,17 @@ class Slack:
             if not cursor or oldest < since:
                 break
         return out
+
+
+def local_days(since: datetime, until: datetime):
+    """Local calendar days that overlap [since, until)."""
+    if until <= since:
+        return
+    day = since.astimezone().date()
+    last = (until - timedelta(microseconds=1)).astimezone().date()
+    while day <= last:
+        yield day
+        day += timedelta(days=1)
 
 
 def from_ts(value: str | None) -> datetime | None:
